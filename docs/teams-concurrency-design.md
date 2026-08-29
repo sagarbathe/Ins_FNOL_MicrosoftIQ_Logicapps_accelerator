@@ -32,7 +32,8 @@ persistent case→thread mapping table
 ### 2. Persist a `case_id -> team_id, channel_id, root_message_id, foundry_thread_id` mapping
 
 - Every time a new case alert is posted, write one row to a small durable
-  store (Azure Table Storage, or a SQL/Cosmos table — see
+  store (a **Fabric SQL Database**, reusing the same Fabric workspace as
+  Fabric IQ — see
   `shared/case_thread_store_schema.sql` for a minimal schema) keyed by a
   **case identifier** you mint at intake time (e.g., a GUID, or the claim
   number once Fabric IQ assigns one).
@@ -89,8 +90,8 @@ CREATE TABLE CaseThreadMap (
 
 ### 5. Concurrency safety at the data-store level
 
-- Use an **idempotent, atomic insert** (e.g., Table Storage's
-  `InsertEntity` with `PartitionKey = CaseId`, which fails naturally on a
+- Use an **idempotent, atomic insert** (e.g., an `INSERT` guarded by the
+  `CaseId` primary key in the Fabric SQL Database, which fails naturally on a
   duplicate key) when creating a new `CaseThreadMap` row, so that if the
   trigger somehow fires twice for the same email (rare but possible with
   at-least-once delivery semantics in Graph webhooks or connector retries),

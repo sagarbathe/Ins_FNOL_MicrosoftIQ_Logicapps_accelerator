@@ -151,7 +151,7 @@
           "RootMessageId": "@{body('Post_new_case_alert_to_Teams')?['id']}",
           "FoundryThreadId": "@{body('Parse_thread_id')?['id']}"
         },
-        "_comment": "Idempotent insert keyed on CaseId (PK) - see shared/case_thread_store_schema.sql. Swap the 'sql' connector for Azure Table Storage if preferred; either works with public endpoints only."
+        "_comment": "Idempotent insert keyed on CaseId (PK) - see shared/case_thread_store_schema.sql. Uses the standard SQL connector pointed at the Fabric SQL Database's public connection string (<db>.sql.azuresynapse.net) - no VNet/Private Endpoint required."
       }
     }
   },

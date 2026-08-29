@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
-  "_comment": "Template for the connections referenced in workflow.json. Fill in resourceId values after creating the API connections in the Azure portal/CLI. These are standard managed API connections over PUBLIC endpoints - no VNet/Private Endpoint gateway is configured or required.",
+  "_comment": "Template for the connections referenced in workflow.json. Fill in resourceId values after creating the API connections in the Azure portal/CLI. These are standard managed API connections over PUBLIC endpoints - no VNet/Private Endpoint gateway is configured or required. 'sql' connects to the Fabric SQL Database hosting CaseThreadMap (see shared/case_thread_store_schema.sql).",
   "office365": {
     "connectionId": "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Web/connections/office365",
     "connectionName": "office365",
