@@ -32,10 +32,6 @@ GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
 
 
-def _bearer_header(token: str) -> str:
-    return "Bearer " + token
-
-
 def _get_graph_token() -> str:
     tenant_id = os.environ["AAD_TENANT_ID"]
     client_id = os.environ["AAD_CLIENT_ID"]
@@ -66,10 +62,6 @@ def search_documents(query: str, top: int = 5) -> list[dict]:
                 "query": {"queryString": query},
                 "from": 0,
                 "size": top,
-                # Required for app-only (application permission) Search API
-                # calls - any valid Azure geo works (does not need to match
-                # tenant region exactly).
-                "region": os.environ.get("GRAPH_SEARCH_REGION", "NAM"),
             }
         ]
     }
@@ -108,7 +100,7 @@ def search_mail(query: str, mailbox_user_id: str, top: int = 5) -> list[dict]:
     resp = requests.get(
         f"{GRAPH_BASE}/users/{mailbox_user_id}/messages",
         headers={"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"},
-        params={"$search": f'"{query}"', "$top": top},
+        params={"$search": f'"{query}"', "$top": top, "$orderby": "receivedDateTime desc"},
         timeout=30,
     )
     resp.raise_for_status()

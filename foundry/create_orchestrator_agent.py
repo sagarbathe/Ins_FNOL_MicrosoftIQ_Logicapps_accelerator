@@ -118,11 +118,7 @@ def _load_workiq_openapi_tool() -> OpenApiTool:
             "calls this wraps."
         ),
         spec=spec,
-        auth=OpenApiConnectionAuthDetails(
-            security_scheme=OpenApiConnectionSecurityScheme(
-                connection_id=os.environ["WORKIQ_GRAPH_FUNCTION_CONNECTION_ID"]
-            )
-        ),
+        auth=OpenApiAnonymousAuthDetails(),
     )
 
 

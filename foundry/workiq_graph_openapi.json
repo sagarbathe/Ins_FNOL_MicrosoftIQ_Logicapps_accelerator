@@ -6,7 +6,7 @@
     "version": "1.0.0"
   },
   "servers": [
-    { "url": "https://<your-function-app-name>.azurewebsites.net/api" }
+    { "url": "https://app-autofnol-workiq.azurewebsites.net" }
   ],
   "paths": {
     "/search-documents": {

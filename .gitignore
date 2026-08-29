@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 orchestrator_agent_id.txt
+
+triggers/webapp/deploy.zip
