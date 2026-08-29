@@ -1,0 +1,159 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "_comment": "Consumption Logic App replacing the Power Automate email-trigger flow. Uses the SAME Office 365 Outlook connector trigger Power Automate used (managed connector over the public Office365 API - no VNet/Private Endpoint involved). All Foundry/Teams calls are plain HTTPS actions against public endpoints with Entra ID auth via a Managed Identity or the HTTP action's OAuth settings.",
+  "parameters": {
+    "foundryProjectEndpoint": { "type": "string" },
+    "orchestratorAgentIdFilePlaceholder": {
+      "type": "string",
+      "defaultValue": "<paste orchestrator_agent_id.txt content here, or resolve via Key Vault>"
+    },
+    "teamId": { "type": "string" },
+    "channelId": { "type": "string" },
+    "fnolMailboxUserId": { "type": "string" }
+  },
+  "triggers": {
+    "When_a_new_email_arrives": {
+      "type": "ApiConnection",
+      "inputs": {
+        "host": {
+          "connection": { "name": "@parameters('$connections')['office365']['connectionId']" }
+        },
+        "method": "get",
+        "path": "/v3/Mail/OnNewEmail",
+        "queries": {
+          "folderPath": "Inbox",
+          "importance": "Any",
+          "fetchOnlyWithAttachment": false
+        }
+      },
+      "recurrence": { "frequency": "Minute", "interval": 1 },
+      "splitOn": "@triggerBody()?['value']"
+    }
+  },
+  "actions": {
+    "Compute_stable_case_id": {
+      "type": "Compose",
+      "runAfter": {},
+      "inputs": "@{base64(triggerBody()?['internetMessageId'])}",
+      "_comment": "Stable, idempotent CaseId derived from internetMessageId per docs/teams-concurrency-design.md step 5 - safe to retry without creating duplicate cases/threads."
+    },
+    "Create_Foundry_thread": {
+      "type": "Http",
+      "runAfter": { "Compute_stable_case_id": ["Succeeded"] },
+      "inputs": {
+        "method": "POST",
+        "uri": "@{parameters('foundryProjectEndpoint')}/threads?api-version=2025-05-01",
+        "authentication": { "type": "ManagedServiceIdentity" },
+        "headers": { "Content-Type": "application/json" },
+        "body": {}
+      }
+    },
+    "Parse_thread_id": {
+      "type": "ParseJson",
+      "runAfter": { "Create_Foundry_thread": ["Succeeded"] },
+      "inputs": {
+        "content": "@body('Create_Foundry_thread')",
+        "schema": { "type": "object", "properties": { "id": { "type": "string" } } }
+      }
+    },
+    "Post_email_as_message": {
+      "type": "Http",
+      "runAfter": { "Parse_thread_id": ["Succeeded"] },
+      "inputs": {
+        "method": "POST",
+        "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/messages?api-version=2025-05-01",
+        "authentication": { "type": "ManagedServiceIdentity" },
+        "headers": { "Content-Type": "application/json" },
+        "body": {
+          "role": "user",
+          "content": "Subject: @{triggerBody()?['subject']}\n\n@{triggerBody()?['bodyPreview']}"
+        }
+      }
+    },
+    "Start_run": {
+      "type": "Http",
+      "runAfter": { "Post_email_as_message": ["Succeeded"] },
+      "inputs": {
+        "method": "POST",
+        "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/runs?api-version=2025-05-01",
+        "authentication": { "type": "ManagedServiceIdentity" },
+        "headers": { "Content-Type": "application/json" },
+        "body": { "agent_id": "@parameters('orchestratorAgentIdFilePlaceholder')" }
+      }
+    },
+    "Parse_run": {
+      "type": "ParseJson",
+      "runAfter": { "Start_run": ["Succeeded"] },
+      "inputs": {
+        "content": "@body('Start_run')",
+        "schema": {
+          "type": "object",
+          "properties": { "id": { "type": "string" }, "status": { "type": "string" } }
+        }
+      }
+    },
+    "Until_run_completes": {
+      "type": "Until",
+      "runAfter": { "Parse_run": ["Succeeded"] },
+      "expression": "@or(equals(body('Get_run_status')?['status'], 'completed'), equals(body('Get_run_status')?['status'], 'failed'))",
+      "limit": { "count": 60, "timeout": "PT10M" },
+      "actions": {
+        "Delay_2s": { "type": "Wait", "inputs": { "interval": { "count": 2, "unit": "Second" } } },
+        "Get_run_status": {
+          "type": "Http",
+          "runAfter": { "Delay_2s": ["Succeeded"] },
+          "inputs": {
+            "method": "GET",
+            "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/runs/@{body('Parse_run')?['id']}?api-version=2025-05-01",
+            "authentication": { "type": "ManagedServiceIdentity" }
+          }
+        }
+      }
+    },
+    "Get_latest_message": {
+      "type": "Http",
+      "runAfter": { "Until_run_completes": ["Succeeded"] },
+      "inputs": {
+        "method": "GET",
+        "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/messages?order=desc&limit=1&api-version=2025-05-01",
+        "authentication": { "type": "ManagedServiceIdentity" }
+      }
+    },
+    "Post_new_case_alert_to_Teams": {
+      "type": "Http",
+      "runAfter": { "Get_latest_message": ["Succeeded"] },
+      "inputs": {
+        "method": "POST",
+        "uri": "https://graph.microsoft.com/v1.0/teams/@{parameters('teamId')}/channels/@{parameters('channelId')}/messages",
+        "authentication": { "type": "ManagedServiceIdentity" },
+        "headers": { "Content-Type": "application/json" },
+        "body": {
+          "body": {
+            "contentType": "html",
+            "content": "@{body('Get_latest_message')?['value'][0]?['content'][0]?['text']?['value']}"
+          }
+        },
+        "_comment": "Creates a NEW top-level channel message = a new reply-chain root for this case, per docs/teams-concurrency-design.md step 1."
+      }
+    },
+    "Persist_CaseThreadMap_row": {
+      "type": "ApiConnection",
+      "runAfter": { "Post_new_case_alert_to_Teams": ["Succeeded"] },
+      "inputs": {
+        "host": { "connection": { "name": "@parameters('$connections')['sql']['connectionId']" } },
+        "method": "post",
+        "path": "/datasets/default/tables/CaseThreadMap/items",
+        "body": {
+          "CaseId": "@{outputs('Compute_stable_case_id')}",
+          "TeamId": "@{parameters('teamId')}",
+          "ChannelId": "@{parameters('channelId')}",
+          "RootMessageId": "@{body('Post_new_case_alert_to_Teams')?['id']}",
+          "FoundryThreadId": "@{body('Parse_thread_id')?['id']}"
+        },
+        "_comment": "Idempotent insert keyed on CaseId (PK) - see shared/case_thread_store_schema.sql. Swap the 'sql' connector for Azure Table Storage if preferred; either works with public endpoints only."
+      }
+    }
+  },
+  "outputs": {}
+}

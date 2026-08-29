@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "_comment": "Template for the connections referenced in workflow.json. Fill in resourceId values after creating the API connections in the Azure portal/CLI. These are standard managed API connections over PUBLIC endpoints - no VNet/Private Endpoint gateway is configured or required.",
+  "office365": {
+    "connectionId": "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Web/connections/office365",
+    "connectionName": "office365",
+    "id": "/subscriptions/<sub-id>/providers/Microsoft.Web/locations/<region>/managedApis/office365"
+  },
+  "sql": {
+    "connectionId": "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Web/connections/sql",
+    "connectionName": "sql",
+    "id": "/subscriptions/<sub-id>/providers/Microsoft.Web/locations/<region>/managedApis/sql"
+  }
+}

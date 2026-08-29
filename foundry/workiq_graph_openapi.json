@@ -1,0 +1,99 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Work IQ Graph Search (Auto FNOL Triage)",
+    "description": "Public-endpoint (graph.microsoft.com) wrapper exposing SharePoint/OneDrive document search and Outlook mail search to the Foundry orchestrator agent. Backed by tools_workiq_graph.py. No VNet/Private Endpoint required.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "https://<your-function-app-name>.azurewebsites.net/api" }
+  ],
+  "paths": {
+    "/search-documents": {
+      "post": {
+        "operationId": "searchDocuments",
+        "summary": "Search SharePoint/OneDrive documents (Work IQ document search equivalent).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": { "type": "string", "description": "Natural-language search query, e.g. a storm/hurricane name or topic." },
+                  "top": { "type": "integer", "default": 5 }
+                },
+                "required": ["query"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Matching documents.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": { "type": "string" },
+                      "webUrl": { "type": "string" },
+                      "summary": { "type": "string" },
+                      "lastModified": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search-mail": {
+      "post": {
+        "operationId": "searchMail",
+        "summary": "Search Outlook mail (Work IQ mail search equivalent).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": { "type": "string", "description": "Natural-language search query, e.g. 'SIU routing change'." },
+                  "mailboxUserId": { "type": "string", "description": "Object id or UPN of the mailbox to search." },
+                  "top": { "type": "integer", "default": 5 }
+                },
+                "required": ["query", "mailboxUserId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Matching emails.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "subject": { "type": "string" },
+                      "from": { "type": "string" },
+                      "receivedDateTime": { "type": "string" },
+                      "bodyPreview": { "type": "string" },
+                      "webLink": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

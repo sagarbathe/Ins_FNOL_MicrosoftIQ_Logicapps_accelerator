@@ -1,0 +1,49 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Fabric IQ Ontology Data Agent (Auto FNOL Triage)",
+    "description": "Public-endpoint wrapper around the existing Fabric ontology / GraphQL data-agent endpoint already used by the Copilot Studio 'InvokeAutoFNOLOntologyAgent' action. No VNet/Private Endpoint required - replace the server URL below with your tenant's actual Fabric data-agent public endpoint (see ../../Auto_FNOL_solution/fabric/configure_data_agent_ontology.py for how that endpoint is provisioned).",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "https://<your-fabric-workspace>.fabric.microsoft.com/dataagents/<agent-id>" }
+  ],
+  "paths": {
+    "/query": {
+      "post": {
+        "operationId": "queryOntology",
+        "summary": "Query the AutoFNOL_Ontology graph (Policyholder, Vehicle, Adjuster, RepairShop, Policy, Claim, FraudSignal, SubrogationFlag) with a natural-language question.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "question": { "type": "string", "description": "Natural-language question, e.g. 'Show coverage limits for Policy POL-00005'." }
+                },
+                "required": ["question"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Structured answer grounded in the ontology graph.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "answer": { "type": "string" },
+                    "records": { "type": "array", "items": { "type": "object" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
