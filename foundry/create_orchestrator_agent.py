@@ -1,30 +1,28 @@
 """
-Provisions the Auto FNOL Triage ORCHESTRATOR agent in Azure AI Foundry — the
-Foundry-native replacement for the Copilot Studio "Auto FNOL Triage Agent".
+Provisions the Auto FNOL Triage ORCHESTRATOR agent in Azure AI Foundry.
 
-This agent wires together the three existing "IQ" building blocks exactly as
+This agent wires together the three "IQ" building blocks exactly as
 described in ../docs/design-options.md (Option A.1):
 
-  1. Fabric IQ  -> an OpenAPI/Action tool calling the same Fabric ontology
-                    data-agent endpoint the Copilot Studio
-                    "InvokeAutoFNOLOntologyAgent" action already calls.
-  2. Foundry IQ -> the EXISTING Foundry knowledge agent
-                    (../../Auto_FNOL_solution/foundry/create_foundry_agent.py),
-                    connected as a Foundry "connected agent" tool - i.e.
-                    agent-to-agent within the same project. No new knowledge
-                    agent is created here; this script only *references* the
-                    agent id already recorded in
-                    ../../Auto_FNOL_solution/foundry/agent_id.txt.
+  1. Fabric IQ  -> an OpenAPI/Action tool (or native MCP tool - see
+                    tools_fabric_iq.py) calling the Fabric ontology
+                    data-agent's endpoint.
+  2. Foundry IQ -> the existing Foundry knowledge agent, connected as a
+                    Foundry "connected agent" tool - i.e. agent-to-agent
+                    within the same project. No new knowledge agent is
+                    created here; this script only *references* the agent
+                    id via FOUNDRY_KNOWLEDGE_AGENT_ID (or an id file path).
   3. Work IQ    -> an OpenAPI/Action tool calling the small Graph-search
                     wrapper defined in tools_workiq_graph.py (see that file
                     for the Retrieval-API vs. Graph-Search-API tradeoff).
 
-Instructions are ported from the Copilot Studio agent's
-`copilotstudio/AutoFNOLAgent/agent.mcs.yml` `instructions:` block, with only
-Copilot-Studio-specific phrasing (e.g., "the Post Teams message action")
-generalized to be orchestrator-agnostic, since Teams posting is now handled
-by the Logic App trigger layer (../../triggers/logicapp/workflow.json), not
-by the agent itself.
+Instructions describe the full FNOL triage routing/assessment logic
+directly (structured-data routing to Fabric IQ, general-knowledge routing
+to Foundry IQ, fraud/subrogation red-flag assessment, CAT-bulletin and
+SIU-routing-change lookups via Work IQ). Teams posting is handled by the
+Logic App trigger layer (../../triggers/logicapp/workflow.json), not by the
+agent itself - the agent only returns a structured summary for the trigger
+to post.
 
 Env vars required (see ../.env.example):
   FOUNDRY_PROJECT_ENDPOINT
@@ -32,8 +30,9 @@ Env vars required (see ../.env.example):
   FABRIC_ONTOLOGY_TOOL_OPENAPI_SPEC_PATH   (path to an OpenAPI 3.0 json/yaml
                                              describing the Fabric ontology
                                              data-agent's callable endpoint)
-  FOUNDRY_KNOWLEDGE_AGENT_ID_FILE           (defaults to the sibling repo's
-                                             foundry/agent_id.txt)
+  FOUNDRY_KNOWLEDGE_AGENT_ID_FILE           (path to a file containing the
+                                             existing Foundry IQ knowledge
+                                             agent's id)
 """
 import json
 import os
@@ -51,7 +50,7 @@ from azure.ai.agents.models import (
 )
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import config  # noqa: E402  (repo-local config.py, same pattern as Auto_FNOL_solution)
+import config  # noqa: E402  (repo-local config.py)
 
 PROJECT_ENDPOINT = config.FOUNDRY_PROJECT_ENDPOINT
 MODEL_DEPLOYMENT = config.FOUNDRY_MODEL_DEPLOYMENT
@@ -59,10 +58,8 @@ ORCHESTRATOR_AGENT_NAME = os.environ.get(
     "ORCHESTRATOR_AGENT_NAME", "auto-fnol-triage-orchestrator"
 )
 
-# Ported from Auto_FNOL_solution/copilotstudio/AutoFNOLAgent/agent.mcs.yml
-# `instructions:` block. Copilot-Studio-specific phrasing generalized;
-# routing logic, CAT bulletin clause, and SIU routing clause preserved
-# verbatim in substance.
+# Triage routing logic, CAT-bulletin clause, and SIU-routing clause for the
+# orchestrator agent.
 ORCHESTRATOR_INSTRUCTIONS = """You are the Auto FNOL Triage Agent for Contoso Insurance. You help intake staff and adjusters process First Notice of Loss submissions - capture loss details, retrieve policy and claim data via the Fabric IQ ontology data agent, triage severity and assign adjusters, flag fraud/subrogation signals, and summarize outcomes for downstream notification (email/Teams).
 
 Route each question to the correct tool based on its type:
@@ -130,24 +127,19 @@ def _load_workiq_openapi_tool() -> OpenApiTool:
 
 
 def _connected_foundry_iq_tool() -> ConnectedAgentTool:
-    agent_id_file = os.environ.get(
-        "FOUNDRY_KNOWLEDGE_AGENT_ID_FILE",
-        os.path.join(
-            os.path.dirname(__file__),
-            "..",
-            "..",
-            "Auto_FNOL_solution",
-            "foundry",
-            "agent_id.txt",
-        ),
-    )
-    with open(agent_id_file) as f:
-        knowledge_agent_id = f.read().strip()
+    knowledge_agent_id = os.environ.get("FOUNDRY_KNOWLEDGE_AGENT_ID", "").strip()
 
-    # ConnectedAgentTool lets the orchestrator call the EXISTING Foundry
-    # knowledge agent (created by Auto_FNOL_solution/foundry/create_foundry_agent.py)
-    # directly, agent-to-agent, within the same Foundry project - no new
-    # knowledge agent, index, or connector is created here.
+    if not knowledge_agent_id:
+        agent_id_file = os.environ.get(
+            "FOUNDRY_KNOWLEDGE_AGENT_ID_FILE",
+            os.path.join(os.path.dirname(__file__), "foundry_knowledge_agent_id.txt"),
+        )
+        with open(agent_id_file) as f:
+            knowledge_agent_id = f.read().strip()
+
+    # ConnectedAgentTool lets the orchestrator call the existing Foundry IQ
+    # knowledge agent directly, agent-to-agent, within the same Foundry
+    # project - no new knowledge agent, index, or connector is created here.
     return ConnectedAgentTool(
         id=knowledge_agent_id,
         name="foundry_iq_knowledge_agent",

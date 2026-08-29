@@ -2,7 +2,7 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Fabric IQ Ontology Data Agent (Auto FNOL Triage)",
-    "description": "NOTE: The real Fabric IQ endpoint is an MCP (Model Context Protocol) streamable-HTTP endpoint, not a plain REST/OpenAPI endpoint - see ../../Auto_FNOL_solution/fabric/test_mcp_dataagent.py for the working MCP client pattern (mcp_url = https://api.fabric.microsoft.com/v1/mcp/workspaces/{workspace_id}/dataagents/{data_agent_id}/agent, auth via AzureCliCredential/DefaultAzureCredential token for https://api.fabric.microsoft.com/.default). This OpenAPI file is kept ONLY as a fallback shape for Foundry's OpenAPI-tool authoring surface if/when it does not yet support wiring an MCP tool directly; the RECOMMENDED integration is to use Foundry's native MCP tool type. See foundry/create_orchestrator_agent.py for both wiring paths.",
+    "description": "NOTE: The real Fabric IQ endpoint is an MCP (Model Context Protocol) streamable-HTTP endpoint, not a plain REST/OpenAPI endpoint (mcp_url = https://api.fabric.microsoft.com/v1/mcp/workspaces/{workspace_id}/dataagents/{data_agent_id}/agent, authenticated via a project connection using user-entra-token auth against the https://analysis.windows.net/powerbi/api audience). This OpenAPI file is kept ONLY as a fallback shape for Foundry's OpenAPI-tool authoring surface if/when it does not yet support wiring an MCP tool directly; the RECOMMENDED integration is to use Foundry's native MCP tool type. See foundry/create_orchestrator_agent.py for both wiring paths.",
     "version": "1.0.0"
   },
   "servers": [

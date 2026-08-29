@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
   "contentVersion": "1.0.0.0",
-  "_comment": "Consumption Logic App replacing the Power Automate email-trigger flow. Uses the SAME Office 365 Outlook connector trigger Power Automate used (managed connector over the public Office365 API - no VNet/Private Endpoint involved). All Foundry/Teams calls are plain HTTPS actions against public endpoints with Entra ID auth via a Managed Identity or the HTTP action's OAuth settings.",
+  "_comment": "Consumption Logic App for the Auto FNOL Triage email-trigger pipeline. Uses the Office 365 Outlook connector's managed trigger over the public Office365 API - no VNet/Private Endpoint involved. All Foundry/Teams calls are plain HTTPS actions against public endpoints with Entra ID auth via a Managed Identity or the HTTP action's OAuth settings.",
   "parameters": {
     "foundryProjectEndpoint": { "type": "string" },
     "orchestratorAgentIdFilePlaceholder": {

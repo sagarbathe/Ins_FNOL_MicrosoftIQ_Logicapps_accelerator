@@ -8,8 +8,8 @@ This intentionally uses PUBLIC Microsoft Graph endpoints only
 no Private Endpoints, no network isolation components are used or required
 for this tool to function, by design for this accelerator.
 
-Two search capabilities, matching the two Copilot Studio Work IQ connectors
-this replaces ("Work IQ Copilot MCP" and "Work IQ Mail MCP"):
+Two search capabilities, providing Work IQ-equivalent search for the
+orchestrator agent:
 
   search_documents(query)  -> SharePoint/OneDrive document search
                                 (CAT bulletins, ad hoc ops guidance, etc.)
@@ -51,8 +51,8 @@ def _get_graph_token() -> str:
 def search_documents(query: str, top: int = 5) -> list[dict]:
     """SharePoint/OneDrive document search via Graph Search API.
 
-    Equivalent to the "Work IQ Copilot MCP" connector's document-search
-    capability in the original Copilot Studio solution.
+    Provides Work IQ-equivalent document-search capability for the
+    orchestrator agent.
     """
     token = _get_graph_token()
     body = {
@@ -93,8 +93,8 @@ def search_mail(query: str, mailbox_user_id: str, top: int = 5) -> list[dict]:
     (the same mailbox the Logic App trigger monitors, or another shared
     mailbox as configured).
 
-    Equivalent to the "Work IQ Mail MCP" connector's mail-search capability
-    in the original Copilot Studio solution.
+    Provides Work IQ-equivalent mail-search capability for the orchestrator
+    agent.
     """
     token = _get_graph_token()
     resp = requests.get(

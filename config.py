@@ -1,4 +1,4 @@
-"""Minimal repo-local config, mirroring Auto_FNOL_solution/config.py's pattern."""
+"""Repo-local config for the Ins_FNOL_MicrosoftIQ_Logicapps_accelerator solution."""
 import os
 
 from dotenv import load_dotenv
