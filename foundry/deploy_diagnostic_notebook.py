@@ -18,6 +18,7 @@ import requests
 WORKSPACE_ID = "4fb5c773-27f6-4f0d-9eb0-f040abfdd977"  # WS_AutoFNOL
 NOTEBOOK_NAME = "SP_Auth_Diagnostic_FabricIQ"
 NOTEBOOK_PATH = "fabric_sp_auth_diagnostic_notebook.ipynb"
+NOTEBOOK_ITEM_ID = "36155fd0-04bc-41de-949f-c421d7ea42a4"  # existing item, set to "" to create new
 
 
 def get_fabric_token() -> str:
@@ -74,14 +75,26 @@ def main():
         },
     }
 
-    url = f"https://api.fabric.microsoft.com/v1/workspaces/{WORKSPACE_ID}/items"
-    resp = requests.post(url, headers=headers, json=body)
+    definition_body = {"definition": body["definition"]}
 
-    if resp.status_code == 201:
-        item = resp.json()
-        print("Notebook created successfully.")
-        print("Item id:", item.get("id"))
-        print("Display name:", item.get("displayName"))
+    if NOTEBOOK_ITEM_ID:
+        url = (
+            f"https://api.fabric.microsoft.com/v1/workspaces/{WORKSPACE_ID}"
+            f"/items/{NOTEBOOK_ITEM_ID}/updateDefinition"
+        )
+        resp = requests.post(url, headers=headers, json=definition_body)
+    else:
+        url = f"https://api.fabric.microsoft.com/v1/workspaces/{WORKSPACE_ID}/items"
+        resp = requests.post(url, headers=headers, json=body)
+    if resp.status_code in (200, 201):
+        print("Notebook updated/created successfully.")
+        if resp.text:
+            try:
+                item = resp.json()
+                print("Item id:", item.get("id"))
+                print("Display name:", item.get("displayName"))
+            except ValueError:
+                pass
         return
 
     if resp.status_code == 202:
