@@ -4,3 +4,11 @@ azure-ai-agents
 requests
 msal
 azure-functions
+python-dotenv
+pandas
+faker
+pyodbc
+azure-storage-file-datalake
+mcp
+httpx
+python-docx

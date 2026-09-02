@@ -172,3 +172,5 @@ are comfortable owning subscription renewal.
 
 **Recommended combination for this accelerator: A.1 + B.1.**
 
+This repo can now support that recommended shape in two independent ways: reuse pre-existing Fabric IQ / Foundry IQ assets, or build them from scratch with the repo-local `datagen/`, `fabric/`, `foundry/build_search_index.py`, and `foundry/create_foundry_agent.py` scripts before deploying the orchestrator layer.
+

@@ -4,6 +4,8 @@ This diagram reflects the current Foundry-native, Logic Apps implementation in t
 (as opposed to the Copilot Studio / Power Automate variant in the companion
 [`Ins_FNOL_MicrosoftIQ_accelerator`](https://github.com/sagarbathe/Ins_FNOL_MicrosoftIQ_accelerator) repo).
 
+Fabric IQ and Foundry IQ can be provided either by pre-existing tenant assets or built from scratch from this repo using `datagen/`, `fabric/`, and `foundry/kb_docs/` plus the new build scripts; the runtime architecture is the same in either case.
+
 ```mermaid
 flowchart TD
     subgraph Intake["📥 Email Intake"]

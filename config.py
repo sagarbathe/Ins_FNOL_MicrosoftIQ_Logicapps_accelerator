@@ -1,9 +1,37 @@
-"""Repo-local config for the Ins_FNOL_MicrosoftIQ_Logicapps_accelerator solution."""
-import os
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
-FOUNDRY_PROJECT_ENDPOINT = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
-FOUNDRY_MODEL_DEPLOYMENT = os.environ.get("FOUNDRY_MODEL_DEPLOYMENT", "gpt-4o")
+
+"""Repo-local config for the Ins_FNOL_MicrosoftIQ_Logicapps_accelerator solution."""
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def _get(name: str, default: str = "") -> str:
+    return os.environ.get(name, default).strip()
+
+
+FOUNDRY_PROJECT_ENDPOINT = _get("FOUNDRY_PROJECT_ENDPOINT")
+FOUNDRY_MODEL_DEPLOYMENT = _get("FOUNDRY_MODEL_DEPLOYMENT", "gpt-4o")
+FOUNDRY_KNOWLEDGE_AGENT_ID = _get("FOUNDRY_KNOWLEDGE_AGENT_ID")
+FOUNDRY_AGENT_NAME = _get("FOUNDRY_AGENT_NAME", "auto-fnol-knowledge-agent")
+FOUNDRY_SEARCH_CONNECTION_NAME = _get("FOUNDRY_SEARCH_CONNECTION_NAME")
+
+FABRIC_WORKSPACE_ID = _get("FABRIC_WORKSPACE_ID")
+FABRIC_LAKEHOUSE_ID = _get("FABRIC_LAKEHOUSE_ID")
+FABRIC_ONTOLOGY_NAME = _get("FABRIC_ONTOLOGY_NAME", "AutoFNOL_Ontology")
+FABRIC_ONTOLOGY_ID = _get("FABRIC_ONTOLOGY_ID")
+FABRIC_GRAPH_MODEL_ID = _get("FABRIC_GRAPH_MODEL_ID")
+FABRIC_DATA_AGENT_ID = _get("FABRIC_DATA_AGENT_ID")
+
+DATAGEN_OUTPUT_DIR = _get("DATAGEN_OUTPUT_DIR", os.path.join("datagen", "output"))
+
+AZURE_SEARCH_ENDPOINT = _get("AZURE_SEARCH_ENDPOINT")
+AZURE_SEARCH_ADMIN_KEY = _get("AZURE_SEARCH_ADMIN_KEY")
+AZURE_SEARCH_INDEX_NAME = _get("AZURE_SEARCH_INDEX_NAME", "auto-fnol-kb-index")
+AZURE_SEARCH_API_VERSION = _get("AZURE_SEARCH_API_VERSION", "2024-07-01")
+
+AZURE_OPENAI_ENDPOINT = _get("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT = _get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+AZURE_OPENAI_API_VERSION = _get("AZURE_OPENAI_API_VERSION", "2024-10-21")
+AZURE_OPENAI_EMBEDDING_DIM = int(_get("AZURE_OPENAI_EMBEDDING_DIM", "1536"))

@@ -144,7 +144,7 @@ doc = Document()
 doc.add_heading("Auto FNOL Triage Accelerator — End-to-End Architecture & Deployment Guide", level=0)
 sub = doc.add_paragraph()
 r = sub.add_run(
-    "Agent Identity edition: Azure AI Foundry orchestrator agent reusing Fabric IQ, Foundry IQ, and Work IQ, "
+    "Agent Identity edition: Azure AI Foundry orchestrator agent reusing or optionally creating Fabric IQ and Foundry IQ alongside Work IQ, "
     "authenticated via a dedicated Entra ID service identity with its own mailbox and Teams membership — no OBO/Bot "
     "Framework required."
 )
@@ -179,7 +179,7 @@ doc.add_page_break()
 add_heading(doc, "1. Solution Overview", level=1)
 doc.add_paragraph(
     "This accelerator replaces the original Power Automate + Copilot Studio FNOL (First Notice of Loss) intake "
-    "pipeline with an Azure AI Foundry Agent Service orchestrator agent. The orchestrator reuses three existing "
+    "pipeline with an Azure AI Foundry Agent Service orchestrator agent. The orchestrator composes three IQ building blocks that can either be pre-existing or, for Fabric IQ and Foundry IQ, created by this repo's new build scripts: "
     "'IQ' building blocks already deployed in this tenant:"
 )
 add_bullets(doc, [
@@ -288,7 +288,7 @@ components = [
         "A Microsoft Fabric Data Agent published over an Ontology graph (Policyholder/Vehicle/Adjuster/RepairShop/"
         "Policy/Claim/FraudSignal/SubrogationFlag) in workspace WS_AutoFNOL, exposed via Fabric's MCP endpoint. "
         "Provides grounded, structured answers to policy/claim-specific questions.",
-        "Pre-existing (built and published in an earlier phase of this accelerator, unchanged this session). The "
+        "Either pre-existing or created by this repo's datagen/ + fabric/ scripts before the rest of deployment. The "
         "webapp's /query-ontology endpoint proxies to it using the Agent Identity's delegated Fabric ('.default') "
         "token via the mcp Python package's streamable-http client.",
         "An active (non-paused) Fabric capacity; the Agent Identity must hold at least Contributor on the Fabric "
@@ -299,7 +299,7 @@ components = [
         "A pre-existing, governed Foundry knowledge agent (with its own vector index / grounding data) covering "
         "policy wording, coverage-part definitions, FNOL triage-tier rules, SIU fraud red flags, state regulatory "
         "requirements, and subrogation methodology. Always returns citations.",
-        "Pre-existing; referenced (not recreated) by the orchestrator via a ConnectedAgentTool pointing at its "
+        "Either pre-existing or created by this repo's foundry/build_search_index.py + foundry/create_foundry_agent.py, then referenced by the orchestrator via a ConnectedAgentTool pointing at its "
         "agent id (read from foundry/foundry_knowledge_agent_id.txt or FOUNDRY_KNOWLEDGE_AGENT_ID env var).",
         "The knowledge agent must already exist in the same Foundry project as the orchestrator (agent-to-agent "
         "connected tools only work within one project).",
@@ -580,9 +580,11 @@ doc.add_paragraph(
 add_heading(doc, "6.1 How to run the deployment script", level=2)
 doc.add_paragraph(
     "Prerequisites: Azure CLI installed and logged in (az login, with the correct subscription selected via "
-    "az account set), Python 3.11+ with pip, and an existing Fabric workspace + published Ontology data agent "
-    "(Fabric IQ) and an existing Foundry project + deployed chat model + existing Foundry IQ knowledge agent — "
-    "this accelerator reuses those, it does not build them from scratch."
+    "az account set), Python 3.11+ with pip, an existing Fabric workspace, and an existing Foundry project + "
+    "deployed chat model. The script builds Fabric IQ (sample data, lakehouse load, ontology, data agent) and "
+    "Foundry IQ (search index, knowledge agent) automatically as steps 1-4, skipping each one whose artifact "
+    "already exists — set FABRIC_DATA_AGENT_ID/FABRIC_ONTOLOGY_ID and/or FOUNDRY_KNOWLEDGE_AGENT_ID in .env "
+    "ahead of time if you are reusing pre-existing Fabric IQ / Foundry IQ assets instead."
 )
 add_code_block(doc, """
 # From the repository root, in PowerShell:
@@ -624,7 +626,30 @@ steps = [
      "opens it in Notepad for you to fill in before continuing.\n"
      "Docs: Azure CLI sign-in — https://learn.microsoft.com/cli/azure/authenticate-azure-cli\n"
      "Docs: Install Python — https://www.python.org/downloads/"),
-    ("Step 1 — Create the Agent Identity user",
+    ("Step 1 — Generate synthetic Auto FNOL data",
+     "Runs datagen/generate_fnol_data.py to create sample CSVs (policyholders, policies, vehicles, adjusters, "
+     "repair shops, claims, fraud signals, subrogation flags) under DATAGEN_OUTPUT_DIR (default datagen/output). "
+     "Skipped automatically if that folder already contains CSV files."),
+    ("Step 2 — Load synthetic data into the Fabric lakehouse",
+     "Runs datagen/load_to_lakehouse.py to upload the generated CSVs into OneLake and load them as Fabric "
+     "lakehouse tables. Skipped automatically if FABRIC_LAKEHOUSE_DATA_LOADED=true is set in .env; set that "
+     "flag after a successful run to skip this step on reruns."),
+    ("Step 3 — Build Fabric IQ ontology and configure the data agent",
+     "Runs fabric/create_ontology.py to create the AutoFNOL ontology over the lakehouse tables (entities, "
+     "relationships, and data bindings), then fabric/configure_data_agent.py to configure the Fabric data agent "
+     "against the raw lakehouse tables. Skipped automatically if FABRIC_DATA_AGENT_ID or FABRIC_ONTOLOGY_ID is "
+     "already set in .env — set this if you are reusing a pre-existing Fabric IQ deployment instead of building "
+     "one here. Optionally, once Fabric auto-generates a graph model and you know its id, set FABRIC_GRAPH_MODEL_ID "
+     "and later run fabric/configure_data_agent_ontology.py to switch the data agent from raw tables to the "
+     "governed ontology graph."),
+    ("Step 4 — Build Foundry IQ search index and knowledge agent",
+     "Runs foundry/build_search_index.py to chunk the knowledge-base markdown docs under foundry/kb_docs into "
+     "an Azure AI Search index (using Azure OpenAI embeddings), then foundry/create_foundry_agent.py to create "
+     "the standalone Foundry IQ knowledge agent over that index, recording its id in "
+     "foundry/foundry_knowledge_agent_id.txt. Skipped automatically if FOUNDRY_KNOWLEDGE_AGENT_ID is already set "
+     "in .env or that id file already exists — set FOUNDRY_KNOWLEDGE_AGENT_ID if you are reusing a pre-existing "
+     "Foundry IQ knowledge agent instead of building one here."),
+    ("Step 5 — Create the Agent Identity user",
      "Prompts for the desired UPN, creates the user via 'az ad user create' (skips if it already exists), then "
      "pauses with instructions to complete four manual portal steps. Where to do each one:\n"
      "  1) Assign an M365 license including Exchange Online + Teams: https://admin.microsoft.com/Adminportal/"
@@ -643,7 +668,7 @@ steps = [
      "depends on that legacy role.\n"
      "The script prints these same links inline when it pauses, so you do not need to keep this document open "
      "side-by-side while running it."),
-    ("Step 2 — Register the Agent Identity public-client app",
+    ("Step 6 — Register the Agent Identity public-client app",
      "Creates the 'FNOL-AgentIdentity-GraphPublicClient' app registration (skips if it already exists), adds the "
      "required delegated Graph (Mail.Read, Mail.Send, Sites.Read.All, Chat.Read, ChannelMessage.Send, "
      "ChannelMessage.Read.All), Power BI/Fabric "
@@ -653,7 +678,7 @@ steps = [
      "Docs: Grant admin consent — https://learn.microsoft.com/entra/identity/enterprise-apps/grant-admin-consent\n"
      "Portal: https://portal.azure.com → Microsoft Entra ID → App registrations → "
      "FNOL-AgentIdentity-GraphPublicClient."),
-    ("Step 3 — Bootstrap the Agent Identity's MSAL token cache",
+    ("Step 7 — Bootstrap the Agent Identity's MSAL token cache",
      "Runs shared/bootstrap_agent_identity_tokens.py, which performs three interactive device-code sign-ins (as "
      "the Agent Identity user) for Graph, Fabric, and Azure SQL scopes, all persisted into one on-disk token cache. "
      "Also writes a base64-encoded copy for later use as chunked App Service app settings; the webapp reassembles "
@@ -662,44 +687,45 @@ steps = [
      "Docs: Device code flow — https://learn.microsoft.com/entra/identity-platform/v2-oauth2-device-code\n"
      "Sign in at https://microsoft.com/devicelogin, enter the code shown for each of the 3 prompts, and "
      "authenticate as the Agent Identity's UPN each time."),
-    ("Step 4 — Create the CaseThreadMap table",
+    ("Step 8 — Create the CaseThreadMap table",
      "Runs shared/create_case_thread_map.py, which authenticates with the Agent Identity's SQL-scoped token and "
      "idempotently creates the CaseThreadMap table + unique index in the Fabric SQL Database.\n"
      "Docs: Fabric SQL Database connectivity — https://learn.microsoft.com/fabric/database/sql/connect"),
-    ("Step 5 — Deploy the Work IQ webapp",
+    ("Step 9 — Deploy the Work IQ webapp",
      "Runs triggers/webapp/deploy_webapp.py, which first checks whether the App Service Plan and Web App "
      "(WORKIQ_RESOURCE_GROUP / WORKIQ_WEBAPP_NAME in .env) already exist and auto-creates them if not (Linux/"
      "Python runtime, SKU from WORKIQ_SKU or B1 default, location from WORKIQ_LOCATION or westus3 default), then "
      "zips the webapp's Python files, deploys them via 'az webapp deploy', and pushes every required app setting "
      "(API key, Agent Identity client id, Fabric workspace/data agent ids, SQL connection string, and the base64 "
-     "token cache from Step 3) directly from .env, so no secret is ever typed on the command line by hand. The "
+     "token cache from Step 7) directly from .env, so no secret is ever typed on the command line by hand. The "
      "token cache is pushed as chunked app settings (AGENT_IDENTITY_TOKEN_CACHE_B64_0..N plus "
      "AGENT_IDENTITY_TOKEN_CACHE_B64_COUNT) because a single App Service setting is too small for the full base64 "
      "blob.\n"
      "Docs: Create a Python App Service — https://learn.microsoft.com/azure/app-service/quickstart-python\n"
      "Docs: az webapp deploy (zip deploy) — https://learn.microsoft.com/cli/azure/webapp#az-webapp-deploy"),
-    ("Step 6 — Create the Foundry connection for the webapp API key",
+    ("Step 10 — Create the Foundry connection for the webapp API key",
      "Runs foundry/create_workiq_connection.py, which creates (or updates) the 'workiq-api-key-conn' Custom Keys "
      "connection on the Foundry project via a direct ARM REST call (the SDK's ConnectionsOperations is read-only "
      "as of azure-ai-projects 2.5.0), so the orchestrator's OpenAPI tools can inject the x-api-key header without "
      "it ever appearing in the agent definition or source control.\n"
      "Docs: Foundry connections (Custom Keys) — https://learn.microsoft.com/azure/ai-foundry/how-to/connections-add"),
-    ("Step 7 — Create the Foundry orchestrator agent",
+    ("Step 11 — Create the Foundry orchestrator agent",
      "Runs foundry/create_orchestrator_agent.py, which deletes any previously recorded orchestrator agent "
      "(orchestrator_agent_id.txt) and creates a fresh one wired to the Fabric IQ and Work IQ OpenAPI tools "
-     "(via OpenApiConnectionAuthDetails against the connection from Step 6) and the existing Foundry IQ knowledge "
-     "agent (via a ConnectedAgentTool). Records the new agent id in orchestrator_agent_id.txt.\n"
+     "(via OpenApiConnectionAuthDetails against the connection from Step 10) and the Foundry IQ knowledge "
+     "agent from Step 4 (or a reused one) via a ConnectedAgentTool. Records the new agent id in "
+     "orchestrator_agent_id.txt.\n"
      "Docs: Azure AI Foundry Agent Service — https://learn.microsoft.com/azure/ai-services/agents/overview\n"
      "Docs: Connected agents / OpenAPI tools — "
      "https://learn.microsoft.com/azure/ai-services/agents/how-to/tools/openapi-spec"),
-    ("Step 8 — Deploy the Logic Apps",
+    ("Step 12 — Deploy the Logic Apps",
      "Runs triggers/logicapp/deploy_logic_apps.py, which now automates most of this step: it generates "
      "parameters.json automatically from .env values (foundryProjectEndpoint, teamId, channelId, "
      "fnolMailboxUserId, workiqBaseUrl, workiqApiKey) plus the orchestrator agent id recorded in "
-     "foundry/orchestrator_agent_id.txt by Step 7 — no manual editing of that file is required. It then creates "
+     "foundry/orchestrator_agent_id.txt by Step 11 — no manual editing of that file is required. It then creates "
      "the Office 365 API Connection resource (idempotent) and writes connections.json automatically, and deploys "
      "both workflow.json and workflow-teams-reply-poller.json as two independent Consumption Logic App resources "
-     "via direct ARM REST calls, printing each Logic App's managed-identity principalId for use in Step 9.\n"
+     "via direct ARM REST calls, printing each Logic App's managed-identity principalId for use in Step 13.\n"
      "The ONE step that genuinely cannot be automated is authorizing the Office 365 connection — this requires an "
      "interactive OAuth sign-in as the FNOL intake mailbox account, which only a human can complete in a browser. "
      "Do this at: Azure Portal → Resource groups → (your resource group) → the 'office365' connection resource → "
@@ -707,7 +733,7 @@ steps = [
      "Docs: Create a Consumption Logic App — "
      "https://learn.microsoft.com/azure/logic-apps/quickstart-create-example-consumption-workflow\n"
      "Docs: Office 365 Outlook connector authorization — https://learn.microsoft.com/connectors/office365/"),
-    ("Step 9 — Grant the Logic Apps' Managed Identities their roles",
+    ("Step 13 — Grant the Logic Apps' Managed Identities their roles",
      "This step is now fully automated — no manual portal action or copy/pasted GUIDs needed. It looks up both "
      "Logic Apps' managed identity principal ids and the Foundry account's resource id directly (via 'az resource "
      "show' / 'az cognitiveservices account show', reading resource group/account names from .env), then: "

@@ -85,20 +85,28 @@ Run from repo root:
 .\deploy_solution.ps1
 ```
 
+This single script builds every artifact the solution needs. Each step checks whether its artifact already exists (via `.env` values such as `FABRIC_DATA_AGENT_ID`/`FOUNDRY_KNOWLEDGE_AGENT_ID`, or generated id files) and automatically skips the build if so — so it's always safe to rerun. Use `-SkipSteps "1,2"` to force-skip specific steps regardless of that check, e.g. on a rerun after a failure partway through.
+
+See [`docs/building-fabric-and-foundry-iq.md`](docs/building-fabric-and-foundry-iq.md) for details on the Fabric IQ / Foundry IQ build steps.
+
 Use [`.env.example`](.env.example) as the source of truth for required and optional configuration.
 
 High-level deployment flow in `deploy_solution.ps1`:
 
 0. **Prerequisites** — verify Azure CLI, Python, and local `.env` setup.
-1. **Create Agent Identity user** — create the dedicated Entra user and pause for license/team/workspace/Foundry access setup.
-2. **Register Agent Identity public-client app** — create the delegated-auth app registration and grant Graph/Fabric/SQL delegated scopes.
-3. **Bootstrap MSAL token cache** — run the one-time Graph + Fabric + SQL device-code bootstrap for the Agent Identity.
-4. **Create CaseThreadMap table** — provision the Fabric SQL table and index used for case/thread correlation.
-5. **Deploy Work IQ webapp** — deploy the Flask app and push app settings, including the chunked token-cache seed.
-6. **Create Foundry connection** — create the Foundry Custom Keys connection that injects the Work IQ API key.
-7. **Create orchestrator agent** — provision the Foundry orchestrator and record its new `agent_id`.
-8. **Deploy Logic Apps** — generate parameters/connections and deploy both the email-intake and Teams-reply-poller workflows.
-9. **Grant Logic App roles** — grant both Logic Apps' managed identities the RBAC/app permissions they need for Foundry and Graph operations.
+1. **Generate synthetic Auto FNOL data** — creates sample CSVs under `datagen/output` (skipped if already present).
+2. **Load data into the Fabric lakehouse** — uploads and loads the generated CSVs into Fabric tables (skipped if `FABRIC_LAKEHOUSE_DATA_LOADED=true`).
+3. **Build Fabric IQ ontology and configure the data agent** — creates the ontology and data agent over the lakehouse tables (skipped if `FABRIC_DATA_AGENT_ID` or `FABRIC_ONTOLOGY_ID` is already set).
+4. **Build Foundry IQ search index and knowledge agent** — chunks `foundry/kb_docs` into Azure AI Search and creates the knowledge agent (skipped if `FOUNDRY_KNOWLEDGE_AGENT_ID` is set or `foundry/foundry_knowledge_agent_id.txt` already exists).
+5. **Create Agent Identity user** — create the dedicated Entra user and pause for license/team/workspace/Foundry access setup.
+6. **Register Agent Identity public-client app** — create the delegated-auth app registration and grant Graph/Fabric/SQL delegated scopes.
+7. **Bootstrap MSAL token cache** — run the one-time Graph + Fabric + SQL device-code bootstrap for the Agent Identity.
+8. **Create CaseThreadMap table** — provision the Fabric SQL table and index used for case/thread correlation.
+9. **Deploy Work IQ webapp** — deploy the Flask app and push app settings, including the chunked token-cache seed.
+10. **Create Foundry connection** — create the Foundry Custom Keys connection that injects the Work IQ API key.
+11. **Create orchestrator agent** — provision the Foundry orchestrator and record its new `agent_id`.
+12. **Deploy Logic Apps** — generate parameters/connections and deploy both the email-intake and Teams-reply-poller workflows.
+13. **Grant Logic App roles** — grant both Logic Apps' managed identities the RBAC/app permissions they need for Foundry and Graph operations.
 
 ## Request / response flow
 
@@ -113,19 +121,42 @@ High-level deployment flow in `deploy_solution.ps1`:
 ## Repo layout
 
 ```text
+fabric/
+  create_ontology.py                # Creates the AutoFNOL ontology item over lakehouse tables.
+  configure_data_agent.py           # Configures the Fabric data agent against raw lakehouse tables.
+  configure_data_agent_ontology.py  # Reconfigures the data agent to use the ontology graph once available.
+  add_adjuster_relationship.py      # Patch helper for older ontologies missing Claim->Adjuster relationship.
+  add_adjuster_edge_to_graph.py     # Patch helper for older auto-generated graph models.
+  check_capacities.py               # Quick Fabric capacity/workspace diagnostics.
+  check_admin_capacities.py         # Quick Fabric admin-capacity diagnostics.
+  check_reference_agent.py          # Inspects a Fabric data agent definition.
+  test_gql_pol5.py                  # Sample graph query smoke test.
+  test_mcp_dataagent.py             # Sample MCP data-agent smoke test.
+
 foundry/
+  build_search_index.py             # Chunks kb_docs and loads them into Azure AI Search.
+  create_foundry_agent.py           # Creates the standalone Foundry IQ knowledge agent from the search index.
   create_orchestrator_agent.py      # Creates/recreates the Foundry orchestrator agent and wires its tools/instructions.
   create_workiq_connection.py       # Creates the Foundry Custom Keys connection for the Work IQ webapp API key.
   deploy_diagnostic_notebook.py     # Publishes the Fabric SP-auth diagnostic notebook into a Fabric workspace.
+  enable_activity_protocol.py       # Patch helper to enable activity protocol on an existing Foundry IQ agent.
   fabric_ontology_openapi.json      # OpenAPI contract for the orchestrator's Fabric IQ ontology tool facade.
   fabric_sp_auth_diagnostic_notebook.ipynb # Notebook for diagnosing Fabric service-principal auth behavior.
+  foundry_knowledge_agent_id.txt    # Last-created Foundry IQ knowledge agent id for downstream reuse.
+  kb_docs/                          # Source markdown docs that power the Foundry IQ search index.
   mcp_sample_sp_auth.ipynb          # Sample notebook for calling Fabric MCP endpoints with service-principal auth.
   mcp_sample_user_auth.ipynb        # Sample notebook for calling Fabric MCP endpoints with delegated user auth.
   orchestrator_agent_id.txt         # Last-created orchestrator agent id, consumed by deployment scripts.
   run_agent_thread.py               # Helper to create/continue Foundry threads and poll runs.
+  test_foundry_agent.py             # Smoke test for the Foundry IQ knowledge agent.
   tools_fabric_iq.py                # Python facade that proxies ontology questions to the Fabric MCP data agent.
   tools_workiq_graph.py             # Legacy/local Work IQ Graph helper module under `foundry/`.
   workiq_graph_openapi.json         # OpenAPI contract for Work IQ search/mail/send-email tool endpoints.
+
+datagen/
+  generate_fnol_data.py             # Generates synthetic CSV source data for the accelerator.
+  load_to_lakehouse.py              # Uploads generated CSVs into OneLake and loads Fabric tables.
+  e2e_golden_path_test.py           # Data-level verification query script for the generated dataset.
 
 shared/
   agent_identity_auth.py            # Shared delegated-auth helper for the Agent Identity, including chunked cache reassembly.
@@ -206,6 +237,7 @@ The reference implementation now assumes **delegated auth via a dedicated Agent 
 
 ## Relationship to the underlying IQ components
 
-- **Fabric IQ**: this accelerator consumes the existing `AutoFNOL_Ontology` Fabric data agent via its endpoint; no ontology remodel is required.
-- **Foundry IQ**: this accelerator consumes the existing governed knowledge agent as a connected tool in the same Foundry project; no changes to the knowledge agent or index are required.
-- **Work IQ**: this accelerator implements equivalent operational retrieval directly against Microsoft Graph (document search, mailbox search, and email send) behind a small webapp, so no separate low-code connector is required.
+- **Fabric IQ**: you can either reuse an existing `AutoFNOL_Ontology` / data-agent deployment, or build it from scratch in this repo using `datagen/` + `fabric/`. The orchestrator still consumes the same `FABRIC_WORKSPACE_ID` / `FABRIC_DATA_AGENT_ID` values downstream either way.
+- **Foundry IQ**: you can either reuse an existing governed knowledge agent, or build it from scratch in this repo using `foundry/kb_docs/`, `foundry/build_search_index.py`, and `foundry/create_foundry_agent.py`. The orchestrator still consumes the same `FOUNDRY_KNOWLEDGE_AGENT_ID` downstream either way.
+- **Work IQ**: this accelerator implements equivalent operational retrieval directly against Microsoft Graph (document search, mailbox search, and email send) behind a small webapp, so no separate low-code connector is required.
+
