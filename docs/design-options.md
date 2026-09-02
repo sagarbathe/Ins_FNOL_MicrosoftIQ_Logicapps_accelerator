@@ -32,7 +32,7 @@ Foundry Project: "sbazureaimodels-project01"
       2. Foundry IQ tool      -> "Connected agent" tool: the governed knowledge
                                   agent, called directly agent-to-agent within the
                                   same Foundry project
-      3. Work IQ tool(s)      -> two options, see A.2 below
+      3. Work IQ tool(s)      -> reference implementation uses a Flask webapp (`triggers/webapp/`) exposing OpenAPI-callable Graph search, mail search, send-email, and ontology-proxy routes; see A.2 below
 ```
 
 Why this composition works well:
@@ -81,9 +81,7 @@ Two ways to expose SharePoint/OneDrive/Outlook search to a Foundry agent:
   against the same underlying data (SharePoint site, Outlook mailbox) with
   standard Graph app permissions (`Sites.Read.All`, `Mail.Read`), no preview
   API dependency.
-- `foundry/tools_workiq_graph.py` in this repo implements this option as the
-  default, with a clearly marked stub to swap in the Retrieval API (A.2-a)
-  when available.
+- The current deployed implementation is the Flask webapp in `triggers/webapp/`, with the Function-based alternative still provided under `triggers/azure-function/`. Both keep the Retrieval API swap isolated behind the same Work IQ contract.
 
 ### A.3 Multi-agent alternative (optional, for larger solutions)
 
@@ -173,3 +171,4 @@ are comfortable owning subscription renewal.
 | Fully code-first / IaC-friendly | Yes | Yes | Yes (workflow.json is IaC) | Yes (most code-first) |
 
 **Recommended combination for this accelerator: A.1 + B.1.**
+

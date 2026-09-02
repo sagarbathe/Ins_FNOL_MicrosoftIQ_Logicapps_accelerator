@@ -1,5 +1,5 @@
-"""
-Work IQ tool implementation for the Foundry orchestrator agent — a thin
+﻿"""
+Work IQ tool implementation for the Foundry orchestrator agent â€” a thin
 wrapper over Microsoft Graph used by the "workiq_graph_search" OpenAPI tool
 referenced in create_orchestrator_agent.py.
 
@@ -24,9 +24,12 @@ Retrieval API, which can be swapped in later by changing only the
 touching the OpenAPI contract the Foundry agent calls.
 """
 import os
+import sys
 
 import requests
 from msal import ConfidentialClientApplication
+
+sys.path.append(os.path.dirname(__file__))
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
@@ -37,6 +40,20 @@ def _bearer_header(token: str) -> str:
 
 
 def _get_graph_token() -> str:
+    """AUTH_MODE=agent_identity (default whenever AGENT_IDENTITY_TENANT_ID
+    is set) acquires a delegated token directly as the dedicated Agent
+    Identity (its own mailbox + Teams membership) instead of an app-only
+    service-principal token - see shared/agent_identity_auth.py and
+    docs/OBO_Bot_Teams_Design.docx.
+    """
+    auth_mode = os.environ.get(
+        "AUTH_MODE", "agent_identity" if os.environ.get("AGENT_IDENTITY_TENANT_ID") else "service_principal"
+    )
+    if auth_mode == "agent_identity":
+        from agent_identity_auth import GRAPH_SCOPE as AGENT_GRAPH_SCOPE, get_agent_token
+
+        return get_agent_token(AGENT_GRAPH_SCOPE)
+
     tenant_id = os.environ["AAD_TENANT_ID"]
     client_id = os.environ["AAD_CLIENT_ID"]
     client_secret = os.environ["AAD_CLIENT_SECRET"]
@@ -59,20 +76,22 @@ def search_documents(query: str, top: int = 5) -> list[dict]:
     orchestrator agent.
     """
     token = _get_graph_token()
-    body = {
-        "requests": [
-            {
-                "entityTypes": ["driveItem"],
-                "query": {"queryString": query},
-                "from": 0,
-                "size": top,
-                # Required for app-only (application permission) Search API
-                # calls - any valid Azure geo works (does not need to match
-                # tenant region exactly).
-                "region": os.environ.get("GRAPH_SEARCH_REGION", "NAM"),
-            }
-        ]
+    auth_mode = os.environ.get(
+        "AUTH_MODE", "agent_identity" if os.environ.get("AGENT_IDENTITY_TENANT_ID") else "service_principal"
+    )
+    request_spec = {
+        "entityTypes": ["driveItem"],
+        "query": {"queryString": query},
+        "from": 0,
+        "size": top,
     }
+    if auth_mode != "agent_identity":
+        # "region" is required for app-only (application permission) Search
+        # API calls, but is REJECTED ("Region is not supported when request
+        # with delegated permission.") for a delegated/agent-identity token -
+        # only set it in service-principal auth mode.
+        request_spec["region"] = os.environ.get("GRAPH_SEARCH_REGION", "NAM")
+    body = {"requests": [request_spec]}
     resp = requests.post(
         f"{GRAPH_BASE}/search/query",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},

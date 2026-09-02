@@ -13,6 +13,7 @@
       "post": {
         "operationId": "searchDocuments",
         "summary": "Search SharePoint/OneDrive documents (Work IQ document search equivalent).",
+        "security": [{ "ApiKeyAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -54,7 +55,8 @@
     "/search-mail": {
       "post": {
         "operationId": "searchMail",
-        "summary": "Search Outlook mail (Work IQ mail search equivalent).",
+        "summary": "Search Outlook mail in the Agent Identity's own mailbox (Work IQ mail search equivalent). Always searches the FNOL intake mailbox this agent runs as - no mailbox to specify.",
+        "security": [{ "ApiKeyAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -63,10 +65,9 @@
                 "type": "object",
                 "properties": {
                   "query": { "type": "string", "description": "Natural-language search query, e.g. 'SIU routing change'." },
-                  "mailboxUserId": { "type": "string", "description": "Object id or UPN of the mailbox to search." },
                   "top": { "type": "integer", "default": 5 }
                 },
-                "required": ["query", "mailboxUserId"]
+                "required": ["query"]
               }
             }
           }
@@ -93,6 +94,56 @@
             }
           }
         }
+      }
+    },
+    "/send-email": {
+      "post": {
+        "operationId": "sendEmail",
+        "summary": "Send an email from the Agent Identity's own mailbox, e.g. to escalate a case to SIU or an adjuster team.",
+        "security": [{ "ApiKeyAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": { "type": "string", "description": "Comma-separated recipient email address(es)." },
+                  "cc": { "type": "string", "description": "Optional comma-separated cc email address(es)." },
+                  "subject": { "type": "string" },
+                  "bodyText": { "type": "string", "description": "Plain-text email body." }
+                },
+                "required": ["to", "subject", "bodyText"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Email sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "to": { "type": "string" },
+                    "subject": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
       }
     }
   }

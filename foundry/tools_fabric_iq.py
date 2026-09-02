@@ -14,10 +14,14 @@ Public HTTPS endpoint only - no VNet/Private Endpoint used or required.
 """
 import asyncio
 import os
+import sys
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from msal import ConfidentialClientApplication
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "shared"))
+
 FABRIC_WORKSPACE_ID = os.environ.get("FABRIC_WORKSPACE_ID", "")
 FABRIC_DATA_AGENT_ID = os.environ.get("FABRIC_DATA_AGENT_ID", "")
 
@@ -28,6 +32,23 @@ MCP_URL = (
 
 
 def _get_fabric_token() -> str:
+    """See tools_workiq_graph._get_graph_token() docstring for the two auth
+    modes. The Fabric Data Agent's ontology query is documented (see
+    FNOL_Logicapps_Solution_Status.docx section 4.4) to fail authorization
+    with a service-principal token even when the SP has workspace
+    Contributor - only a delegated (real user) token works. This is exactly
+    the gap the Agent Identity option (docs/OBO_Bot_Teams_Design.docx)
+    closes, so AUTH_MODE defaults to agent_identity whenever it's
+    configured.
+    """
+    auth_mode = os.environ.get(
+        "AUTH_MODE", "agent_identity" if os.environ.get("AGENT_IDENTITY_TENANT_ID") else "service_principal"
+    )
+    if auth_mode == "agent_identity":
+        from agent_identity_auth import FABRIC_SCOPE, get_agent_token
+
+        return get_agent_token(FABRIC_SCOPE)
+
     tenant_id = os.environ["AAD_TENANT_ID"]
     client_id = os.environ["AAD_CLIENT_ID"]
     client_secret = os.environ["AAD_CLIENT_SECRET"]
@@ -38,7 +59,7 @@ def _get_fabric_token() -> str:
         authority=f"https://login.microsoftonline.com/{tenant_id}",
     )
     result = app.acquire_token_for_client(
-        scopes=["https://analysis.windows.net/powerbi/api/.default"]
+        scopes=["https://api.fabric.microsoft.com/.default"]
     )
     if "access_token" not in result:
         raise RuntimeError(f"Failed to acquire Fabric token: {result}")

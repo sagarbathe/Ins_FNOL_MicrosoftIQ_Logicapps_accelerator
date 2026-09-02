@@ -1,14 +1,9 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
-  "_comment": "Template for the connections referenced in workflow.json. Fill in resourceId values after creating the API connections in the Azure portal/CLI. These are standard managed API connections over PUBLIC endpoints - no VNet/Private Endpoint gateway is configured or required. 'sql' connects to the Fabric SQL Database hosting CaseThreadMap (see shared/case_thread_store_schema.sql).",
+  "_comment": "Template for the connections referenced in workflow.json. Fill in resourceId values after creating the API connections in the Azure portal/CLI. This is a standard managed API connection over a PUBLIC endpoint - no VNet/Private Endpoint gateway is configured or required. CaseThreadMap persistence (see shared/case_thread_store_schema.sql) goes through the Work IQ web app's /insert-case-thread-map endpoint (Agent Identity + pyodbc auth), NOT a SQL ApiConnection, so no 'sql' connection is needed here.",
   "office365": {
     "connectionId": "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Web/connections/office365",
     "connectionName": "office365",
     "id": "/subscriptions/<sub-id>/providers/Microsoft.Web/locations/<region>/managedApis/office365"
-  },
-  "sql": {
-    "connectionId": "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Web/connections/sql",
-    "connectionName": "sql",
-    "id": "/subscriptions/<sub-id>/providers/Microsoft.Web/locations/<region>/managedApis/sql"
   }
 }

@@ -60,7 +60,7 @@ CREATE TABLE CaseThreadMap (
 
 - If the orchestrator needs to post an update for an *existing* case
   (e.g., a delayed subrogation check finishes, or a human asks a follow-up
-  question that gets routed back through Foundry), the Logic App/Function:
+  question that gets routed back through Foundry), the Logic App/webapp/Function path:
   1. Looks up `CaseThreadMap` by `CaseId` (or by matching the incoming
      Teams message's **`replyToId`**, which Teams sets on any reply within
      an existing thread — see step 4).
@@ -110,9 +110,7 @@ CREATE TABLE CaseThreadMap (
   share content. The **only** risk of context bleed is an *application bug*
   where the trigger logic accidentally reuses one `thread_id` for multiple
   concurrent emails (e.g., a cached/global variable instead of a per-case
-  lookup). The `CaseThreadMap` table in step 2 is precisely what prevents
-  this: always mint a **new** Foundry thread per new case, and always
-  **look up** (never guess/reuse) the existing thread for follow-ups.
+  lookup). The `CaseThreadMap` table in step 2 is precisely what prevents this: always mint a **new** Foundry thread per new case, and always **look up** (never guess/reuse) the existing thread for follow-ups. In the current reference implementation, `workflow-teams-reply-poller.json` also runs with trigger concurrency forced to `runs: 1` so two poll cycles cannot race to post into the same Foundry thread while a prior run is still active.
 
 ## Summary flow
 
@@ -138,3 +136,4 @@ threads and N independent Foundry threads**, and any reply — no matter how
 many other cases are "in flight" at the same time — is deterministically
 routed back to the correct case's context on both the Teams side and the
 Foundry side.
+

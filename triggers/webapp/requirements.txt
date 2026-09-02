@@ -4,3 +4,5 @@ requests
 msal
 mcp
 httpx
+pyodbc
+markdown

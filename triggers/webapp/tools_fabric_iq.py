@@ -14,11 +14,18 @@ Public HTTPS endpoint only - no VNet/Private Endpoint used or required.
 """
 import asyncio
 import os
+import sys
 
 from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client as streamablehttp_client
+try:
+    from mcp.client.streamable_http import streamablehttp_client
+except ImportError:
+    # Older mcp package versions exported this under a different name.
+    from mcp.client.streamable_http import streamable_http_client as streamablehttp_client
 from msal import ConfidentialClientApplication
 import httpx
+
+sys.path.append(os.path.dirname(__file__))
 
 FABRIC_WORKSPACE_ID = os.environ.get("FABRIC_WORKSPACE_ID", "")
 FABRIC_DATA_AGENT_ID = os.environ.get("FABRIC_DATA_AGENT_ID", "")
@@ -30,6 +37,21 @@ MCP_URL = (
 
 
 def _get_fabric_token() -> str:
+    """See tools_workiq_graph._get_graph_token() docstring for the two auth
+    modes. AUTH_MODE defaults to agent_identity whenever
+    AGENT_IDENTITY_TENANT_ID is configured, since only a delegated (real
+    user) token can authorize the ontology data-agent's internal query -
+    a service-principal token fails authorization even with workspace
+    Contributor (see FNOL_Logicapps_Solution_Status.docx section 4.4).
+    """
+    auth_mode = os.environ.get(
+        "AUTH_MODE", "agent_identity" if os.environ.get("AGENT_IDENTITY_TENANT_ID") else "service_principal"
+    )
+    if auth_mode == "agent_identity":
+        from agent_identity_auth import FABRIC_SCOPE, get_agent_token
+
+        return get_agent_token(FABRIC_SCOPE)
+
     tenant_id = os.environ["AAD_TENANT_ID"]
     client_id = os.environ["AAD_CLIENT_ID"]
     client_secret = os.environ["AAD_CLIENT_SECRET"]

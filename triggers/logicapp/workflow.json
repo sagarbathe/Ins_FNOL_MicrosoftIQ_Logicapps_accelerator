@@ -10,7 +10,26 @@
     },
     "teamId": { "type": "string" },
     "channelId": { "type": "string" },
-    "fnolMailboxUserId": { "type": "string" }
+    "fnolMailboxUserId": { "type": "string" },
+    "errorNotificationEmail": {
+      "type": "string",
+      "defaultValue": "sagarbathe@mngenvmcap146722.onmicrosoft.com",
+      "_comment": "Recipient for failure notifications. Non-technical Teams channel members must NEVER see partial/failed analyses - any failure anywhere in this workflow (Foundry run failure, HTTP errors, etc.) skips all Teams posting and instead emails full error detail here, then terminates the run as Failed."
+    },
+    "workiqBaseUrl": {
+      "type": "string",
+      "defaultValue": "https://app-autofnol-workiq.azurewebsites.net",
+      "_comment": "Work IQ web app base URL - also used to post Teams messages (see /post-new-case-alert, /post-case-reply) via the dedicated Agent Identity's delegated auth, since Microsoft Graph has NO app-only permission for posting Teams channel messages (ChannelMessage.Send does not exist as an application permission - see docs/OBO_Bot_Teams_Design.docx and FNOL_Logicapps_Solution_Status.docx section 4.6). A direct Managed-Identity HTTP call to Graph's /messages endpoint (the pre-Agent-Identity approach) cannot work for this step."
+    },
+    "workiqApiKey": {
+      "type": "securestring",
+      "_comment": "Matches the WORKIQ_API_KEY app setting on app-autofnol-workiq - resolve via Key Vault reference in production, never hardcode."
+    },
+    "$connections": {
+      "type": "object",
+      "defaultValue": {},
+      "_comment": "Required declaration for any Consumption Logic App that uses an ApiConnection trigger/action (the Office 365 'When a new email arrives' trigger below) - ARM rejects the deployment if this parameter is not declared here, even though its value is always supplied at deploy time via deploy_logic_apps.py / connections.json."
+    }
   },
   "triggers": {
     "When_a_new_email_arrives": {
@@ -32,126 +51,219 @@
     }
   },
   "actions": {
-    "Compute_stable_case_id": {
-      "type": "Compose",
+    "Try_process_case": {
+      "type": "Scope",
       "runAfter": {},
-      "inputs": "@{base64(triggerBody()?['internetMessageId'])}",
-      "_comment": "Stable, idempotent CaseId derived from internetMessageId per docs/teams-concurrency-design.md step 5 - safe to retry without creating duplicate cases/threads."
-    },
-    "Create_Foundry_thread": {
-      "type": "Http",
-      "runAfter": { "Compute_stable_case_id": ["Succeeded"] },
-      "inputs": {
-        "method": "POST",
-        "uri": "@{parameters('foundryProjectEndpoint')}/threads?api-version=2025-05-01",
-        "authentication": { "type": "ManagedServiceIdentity" },
-        "headers": { "Content-Type": "application/json" },
-        "body": {}
-      }
-    },
-    "Parse_thread_id": {
-      "type": "ParseJson",
-      "runAfter": { "Create_Foundry_thread": ["Succeeded"] },
-      "inputs": {
-        "content": "@body('Create_Foundry_thread')",
-        "schema": { "type": "object", "properties": { "id": { "type": "string" } } }
-      }
-    },
-    "Post_email_as_message": {
-      "type": "Http",
-      "runAfter": { "Parse_thread_id": ["Succeeded"] },
-      "inputs": {
-        "method": "POST",
-        "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/messages?api-version=2025-05-01",
-        "authentication": { "type": "ManagedServiceIdentity" },
-        "headers": { "Content-Type": "application/json" },
-        "body": {
-          "role": "user",
-          "content": "Subject: @{triggerBody()?['subject']}\n\n@{triggerBody()?['bodyPreview']}"
-        }
-      }
-    },
-    "Start_run": {
-      "type": "Http",
-      "runAfter": { "Post_email_as_message": ["Succeeded"] },
-      "inputs": {
-        "method": "POST",
-        "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/runs?api-version=2025-05-01",
-        "authentication": { "type": "ManagedServiceIdentity" },
-        "headers": { "Content-Type": "application/json" },
-        "body": { "agent_id": "@parameters('orchestratorAgentIdFilePlaceholder')" }
-      }
-    },
-    "Parse_run": {
-      "type": "ParseJson",
-      "runAfter": { "Start_run": ["Succeeded"] },
-      "inputs": {
-        "content": "@body('Start_run')",
-        "schema": {
-          "type": "object",
-          "properties": { "id": { "type": "string" }, "status": { "type": "string" } }
-        }
-      }
-    },
-    "Until_run_completes": {
-      "type": "Until",
-      "runAfter": { "Parse_run": ["Succeeded"] },
-      "expression": "@or(equals(body('Get_run_status')?['status'], 'completed'), equals(body('Get_run_status')?['status'], 'failed'))",
-      "limit": { "count": 60, "timeout": "PT10M" },
+      "_comment": "All case-processing actions run inside this Try scope. If ANY action fails (HTTP error, timeout, etc.), Logic Apps marks this scope Failed and control passes to Catch_and_notify_failure below - no Teams post ever happens on failure. A successful Foundry run that itself reports status 'failed' is also detected explicitly (see Check_run_failed) and routed to the same failure/email path.",
       "actions": {
-        "Delay_2s": { "type": "Wait", "inputs": { "interval": { "count": 2, "unit": "Second" } } },
-        "Get_run_status": {
+        "Compute_stable_case_id": {
+          "type": "Compose",
+          "runAfter": {},
+          "inputs": "@{base64(triggerBody()?['internetMessageId'])}",
+          "_comment": "Stable, idempotent CaseId derived from internetMessageId per docs/teams-concurrency-design.md step 5 - safe to retry without creating duplicate cases/threads."
+        },
+        "Create_Foundry_thread": {
           "type": "Http",
-          "runAfter": { "Delay_2s": ["Succeeded"] },
+          "runAfter": { "Compute_stable_case_id": ["Succeeded"] },
           "inputs": {
-            "method": "GET",
-            "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/runs/@{body('Parse_run')?['id']}?api-version=2025-05-01",
-            "authentication": { "type": "ManagedServiceIdentity" }
+            "method": "POST",
+            "uri": "@{parameters('foundryProjectEndpoint')}/threads?api-version=2025-05-01",
+            "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ai.azure.com" },
+            "headers": { "Content-Type": "application/json" },
+            "body": {}
+          }
+        },
+        "Parse_thread_id": {
+          "type": "ParseJson",
+          "runAfter": { "Create_Foundry_thread": ["Succeeded"] },
+          "inputs": {
+            "content": "@body('Create_Foundry_thread')",
+            "schema": { "type": "object", "properties": { "id": { "type": "string" } } }
+          }
+        },
+        "Post_email_as_message": {
+          "type": "Http",
+          "runAfter": { "Parse_thread_id": ["Succeeded"] },
+          "inputs": {
+            "method": "POST",
+            "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/messages?api-version=2025-05-01",
+            "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ai.azure.com" },
+            "headers": { "Content-Type": "application/json" },
+            "body": {
+              "role": "user",
+              "content": "Subject: @{triggerBody()?['subject']}\n\n@{triggerBody()?['body']}"
+            }
+          }
+        },
+        "Start_run": {
+          "type": "Http",
+          "runAfter": { "Post_email_as_message": ["Succeeded"] },
+          "inputs": {
+            "method": "POST",
+            "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/runs?api-version=2025-05-01",
+            "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ai.azure.com" },
+            "headers": { "Content-Type": "application/json" },
+            "body": { "assistant_id": "@parameters('orchestratorAgentIdFilePlaceholder')" }
+          }
+        },
+        "Parse_run": {
+          "type": "ParseJson",
+          "runAfter": { "Start_run": ["Succeeded"] },
+          "inputs": {
+            "content": "@body('Start_run')",
+            "schema": {
+              "type": "object",
+              "properties": { "id": { "type": "string" }, "status": { "type": "string" } }
+            }
+          }
+        },
+        "Until_run_completes": {
+          "type": "Until",
+          "runAfter": { "Parse_run": ["Succeeded"] },
+          "expression": "@or(equals(body('Get_run_status')?['status'], 'completed'), equals(body('Get_run_status')?['status'], 'failed'))",
+          "limit": { "count": 60, "timeout": "PT10M" },
+          "actions": {
+            "Delay_2s": { "type": "Wait", "inputs": { "interval": { "count": 2, "unit": "Second" } } },
+            "Get_run_status": {
+              "type": "Http",
+              "runAfter": { "Delay_2s": ["Succeeded"] },
+              "inputs": {
+                "method": "GET",
+                "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/runs/@{body('Parse_run')?['id']}?api-version=2025-05-01",
+                "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ai.azure.com" }
+              }
+            }
+          }
+        },
+        "Validate_run_completed": {
+          "type": "ParseJson",
+          "runAfter": { "Until_run_completes": ["Succeeded"] },
+          "inputs": {
+            "content": "@body('Get_run_status')?['status']",
+            "schema": { "type": "string", "enum": ["completed"] }
+          },
+          "_comment": "Purely cosmetic/diagnostic: forces THIS action to show red/Failed in run history whenever the Foundry run's final status is anything other than 'completed' (e.g. 'failed', 'expired', 'cancelled', or the Until loop's own timeout), since Get_run_status itself always shows Succeeded (the HTTP call worked - it's the payload's status field that indicates failure). Check_run_failed below still performs the actual failure routing/emailing regardless of this action's outcome."
+        },
+        "Check_run_failed": {
+          "type": "If",
+          "runAfter": { "Validate_run_completed": ["Succeeded", "Failed", "Skipped", "TimedOut"] },
+          "expression": {
+            "not": { "equals": ["@body('Get_run_status')?['status']", "completed"] }
+          },
+          "_comment": "Until_run_completes exits Succeeded on EITHER 'completed' or 'failed' Foundry run status (both are HTTP 200s, so the Logic App action itself never fails) - or after a 10-minute timeout. Anything other than 'completed' (failed, timed out, cancelled, expired) routes here: send the detailed failure email directly and terminate the run as Failed WITHOUT ever posting to Teams. Only a genuinely 'completed' run reaches Post_new_case_alert_to_Teams.",
+          "actions": {
+            "Send_failure_email_run_not_completed": {
+              "type": "ApiConnection",
+              "runAfter": {},
+              "inputs": {
+                "host": {
+                  "connection": { "name": "@parameters('$connections')['office365']['connectionId']" }
+                },
+                "method": "post",
+                "path": "/v2/Mail",
+                "body": {
+                  "To": "@{parameters('errorNotificationEmail')}",
+                  "Subject": "[Auto FNOL Triage] Case processing FAILED - @{triggerBody()?['subject']}",
+                  "Body": "<p>The Auto FNOL Triage email-intake Logic App's Foundry agent run did not complete successfully. No message was posted to Teams.</p><p><b>Original email subject:</b> @{triggerBody()?['subject']}</p><p><b>From:</b> @{triggerBody()?['from']}</p><p><b>Internet Message Id:</b> @{triggerBody()?['internetMessageId']}</p><p><b>Foundry thread id:</b> @{body('Parse_thread_id')?['id']}</p><p><b>Final run status:</b> @{body('Get_run_status')?['status']}</p><p><b>Last error:</b></p><pre>@{string(body('Get_run_status')?['last_error'])}</pre>",
+                  "Importance": "High",
+                  "IsHtml": true
+                }
+              }
+            },
+            "Terminate_run_not_completed": {
+              "type": "Terminate",
+              "runAfter": { "Send_failure_email_run_not_completed": ["Succeeded"] },
+              "inputs": {
+                "runStatus": "Failed",
+                "runError": {
+                  "code": "FoundryRunNotCompleted",
+                  "message": "Foundry run final status: @{body('Get_run_status')?['status']}. Failure notification emailed to @{parameters('errorNotificationEmail')}."
+                }
+              }
+            }
+          },
+          "else": {
+            "actions": {
+              "Get_latest_message": {
+                "type": "Http",
+                "runAfter": {},
+                "inputs": {
+                  "method": "GET",
+                  "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/messages?order=desc&limit=1&api-version=2025-05-01",
+                  "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ai.azure.com" }
+                }
+              },
+              "Post_new_case_alert_to_Teams": {
+                "type": "Http",
+                "runAfter": { "Get_latest_message": ["Succeeded"] },
+                "inputs": {
+                  "method": "POST",
+                  "uri": "@{parameters('workiqBaseUrl')}/post-new-case-alert",
+                  "headers": { "Content-Type": "application/json", "x-api-key": "@{parameters('workiqApiKey')}" },
+                  "body": {
+                    "teamId": "@{parameters('teamId')}",
+                    "channelId": "@{parameters('channelId')}",
+                    "messageHtml": "@{body('Get_latest_message')?['data'][0]?['content'][0]?['text']?['value']}"
+                  },
+                  "_comment": "Creates a NEW top-level channel message = a new reply-chain root for this case, per docs/teams-concurrency-design.md step 1. MUST go through the Work IQ web app's Agent-Identity-backed endpoint, NOT a direct Managed-Identity Graph call - Graph has no app-only permission for posting Teams channel messages (see FNOL_Logicapps_Solution_Status.docx section 4.6)."
+                }
+              },
+              "Persist_CaseThreadMap_row": {
+                "type": "Http",
+                "runAfter": { "Post_new_case_alert_to_Teams": ["Succeeded"] },
+                "inputs": {
+                  "method": "POST",
+                  "uri": "@{parameters('workiqBaseUrl')}/insert-case-thread-map",
+                  "headers": { "Content-Type": "application/json", "x-api-key": "@{parameters('workiqApiKey')}" },
+                  "body": {
+                    "caseId": "@{outputs('Compute_stable_case_id')}",
+                    "teamId": "@{parameters('teamId')}",
+                    "channelId": "@{parameters('channelId')}",
+                    "rootMessageId": "@{body('Post_new_case_alert_to_Teams')?['id']}",
+                    "foundryThreadId": "@{body('Parse_thread_id')?['id']}"
+                  },
+                  "_comment": "Idempotent insert keyed on CaseId (PK) - see shared/case_thread_store_schema.sql. MUST go through the Work IQ web app's Agent-Identity-backed /insert-case-thread-map endpoint (pyodbc + Entra token auth), NOT the standard SQL ApiConnection connector - the Fabric SQL Database only accepts Entra-token auth (SQL_COPT_SS_ACCESS_TOKEN), which the Logic App SQL connector does not support directly without OBO, defeating the purpose of the Agent Identity approach."
+                }
+              }
+            }
           }
         }
       }
     },
-    "Get_latest_message": {
-      "type": "Http",
-      "runAfter": { "Until_run_completes": ["Succeeded"] },
-      "inputs": {
-        "method": "GET",
-        "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{body('Parse_thread_id')?['id']}/messages?order=desc&limit=1&api-version=2025-05-01",
-        "authentication": { "type": "ManagedServiceIdentity" }
-      }
-    },
-    "Post_new_case_alert_to_Teams": {
-      "type": "Http",
-      "runAfter": { "Get_latest_message": ["Succeeded"] },
-      "inputs": {
-        "method": "POST",
-        "uri": "https://graph.microsoft.com/v1.0/teams/@{parameters('teamId')}/channels/@{parameters('channelId')}/messages",
-        "authentication": { "type": "ManagedServiceIdentity" },
-        "headers": { "Content-Type": "application/json" },
-        "body": {
-          "body": {
-            "contentType": "html",
-            "content": "@{body('Get_latest_message')?['value'][0]?['content'][0]?['text']?['value']}"
+    "Catch_and_notify_failure": {
+      "type": "Scope",
+      "runAfter": { "Try_process_case": ["Failed", "TimedOut"] },
+      "_comment": "Runs ONLY if Try_process_case failed (any HTTP error, or the explicit Terminate from Check_run_failed above). Sends a detailed error email to the FNOL solution owner via the same authenticated office365-1 mailbox connection used by the trigger, then fails the overall Logic App run so it is clearly flagged as Failed in run history/alerts. No Teams message is ever sent on this path.",
+      "actions": {
+        "Send_failure_email": {
+          "type": "ApiConnection",
+          "runAfter": {},
+          "inputs": {
+            "host": {
+              "connection": { "name": "@parameters('$connections')['office365']['connectionId']" }
+            },
+            "method": "post",
+            "path": "/v2/Mail",
+            "body": {
+              "To": "@{parameters('errorNotificationEmail')}",
+              "Subject": "[Auto FNOL Triage] Case processing FAILED - @{triggerBody()?['subject']}",
+              "Body": "<p>The Auto FNOL Triage email-intake Logic App failed to process an incoming case and did NOT post anything to Teams.</p><p><b>Original email subject:</b> @{triggerBody()?['subject']}</p><p><b>From:</b> @{triggerBody()?['from']}</p><p><b>Internet Message Id:</b> @{triggerBody()?['internetMessageId']}</p><p><b>Workflow run:</b> @{workflow()?['run']?['name']}</p><p><b>Failure details:</b></p><pre>@{string(result('Try_process_case'))}</pre>",
+              "Importance": "High",
+              "IsHtml": true
+            }
           }
         },
-        "_comment": "Creates a NEW top-level channel message = a new reply-chain root for this case, per docs/teams-concurrency-design.md step 1."
-      }
-    },
-    "Persist_CaseThreadMap_row": {
-      "type": "ApiConnection",
-      "runAfter": { "Post_new_case_alert_to_Teams": ["Succeeded"] },
-      "inputs": {
-        "host": { "connection": { "name": "@parameters('$connections')['sql']['connectionId']" } },
-        "method": "post",
-        "path": "/datasets/default/tables/CaseThreadMap/items",
-        "body": {
-          "CaseId": "@{outputs('Compute_stable_case_id')}",
-          "TeamId": "@{parameters('teamId')}",
-          "ChannelId": "@{parameters('channelId')}",
-          "RootMessageId": "@{body('Post_new_case_alert_to_Teams')?['id']}",
-          "FoundryThreadId": "@{body('Parse_thread_id')?['id']}"
-        },
-        "_comment": "Idempotent insert keyed on CaseId (PK) - see shared/case_thread_store_schema.sql. Uses the standard SQL connector pointed at the Fabric SQL Database's public connection string (<db>.sql.azuresynapse.net) - no VNet/Private Endpoint required."
+        "Terminate_workflow_as_failed": {
+          "type": "Terminate",
+          "runAfter": { "Send_failure_email": ["Succeeded"] },
+          "inputs": {
+            "runStatus": "Failed",
+            "runError": {
+              "code": "CaseProcessingFailed",
+              "message": "Case processing failed - see notification email sent to the FNOL solution owner for full error detail. No message was posted to Teams."
+            }
+          }
+        }
       }
     }
   },

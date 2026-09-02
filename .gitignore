@@ -4,3 +4,18 @@ __pycache__/
 orchestrator_agent_id.txt
 
 triggers/webapp/deploy.zip
+
+# Agent Identity credentials/token cache - never commit (see
+# shared/agent_identity_auth.py). Contains a live refresh token.
+.secrets/
+*.bin
+
+# Generated per-environment Logic App files - contain live subscription id,
+# tenant IDs, API key, and connection resource IDs. Only the .template
+# versions are tracked in source control.
+triggers/logicapp/parameters.json
+triggers/logicapp/connections.json
+
+# Word lock files
+~$*.docx
+

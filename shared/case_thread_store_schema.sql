@@ -12,13 +12,15 @@
 -- trigger firings for the same email are naturally idempotent.
 
 CREATE TABLE CaseThreadMap (
-    CaseId            NVARCHAR(64)  NOT NULL PRIMARY KEY,
-    TeamId            NVARCHAR(64)  NOT NULL,
-    ChannelId         NVARCHAR(128) NOT NULL,
-    RootMessageId     NVARCHAR(128) NOT NULL,
-    FoundryThreadId   NVARCHAR(128) NOT NULL,
-    CreatedUtc        DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME(),
-    LastActivityUtc   DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME()
+    CaseId                  NVARCHAR(256) NOT NULL PRIMARY KEY,
+    TeamId                  NVARCHAR(64)  NOT NULL,
+    ChannelId               NVARCHAR(128) NOT NULL,
+    RootMessageId           NVARCHAR(128) NOT NULL,
+    FoundryThreadId         NVARCHAR(128) NOT NULL,
+    CreatedUtc              DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME(),
+    LastActivityUtc         DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME(),
+    LastProcessedReplyId    NVARCHAR(128) NULL,
+    LastProcessedReplyUtc   DATETIME2     NULL
 );
 
 -- Fast lookup path for inbound Teams replies: resolve CaseId from the

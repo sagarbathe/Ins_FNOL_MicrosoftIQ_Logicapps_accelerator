@@ -1,0 +1,188 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "_comment": "Second, independent Logic App implementing docs/teams-concurrency-design.md step 4 (inbound human reply -> case resolution -> Foundry thread continuation -> nested Teams reply). Polls PER-CASE via Graph GET .../messages/{root-message-id}/replies, NOT the channel-level /messages/delta call - Graph's channel-level delta endpoint only returns TOP-LEVEL messages and never includes nested replies, so a channel-wide scan can never see follow-up questions. Instead, this workflow asks the Work IQ webapp for every open case tracked in CaseThreadMap (/list-open-cases), then polls each case's own /replies endpoint (/list-case-replies) and skips replies already marked processed (LastProcessedReplyId) or posted by the Agent Identity itself. Runs on its own recurrence, independent of the email-trigger workflow.json.",
+  "parameters": {
+    "foundryProjectEndpoint": { "type": "string" },
+    "orchestratorAgentIdFilePlaceholder": {
+      "type": "string",
+      "defaultValue": "<paste orchestrator_agent_id.txt content here, or resolve via Key Vault>"
+    },
+    "teamId": { "type": "string" },
+    "channelId": { "type": "string" },
+    "agentIdentityUserId": {
+      "type": "string",
+      "_comment": "Entra object id of the dedicated Agent Identity user (svc-fnol-agent) - used to filter out the agent's own Teams posts so the poller never reacts to its own case-alert/ack messages."
+    },
+    "workiqBaseUrl": {
+      "type": "string",
+      "defaultValue": "https://app-autofnol-workiq.azurewebsites.net"
+    },
+    "workiqApiKey": {
+      "type": "securestring",
+      "_comment": "Matches the WORKIQ_API_KEY app setting on app-autofnol-workiq."
+    }
+  },
+  "triggers": {
+    "Recurrence_poll_every_minute": {
+      "type": "Recurrence",
+      "recurrence": { "frequency": "Second", "interval": 30 },
+      "runtimeConfiguration": {
+        "concurrency": { "runs": 1 }
+      },
+      "_comment": "concurrency.runs=1 forces this trigger to run strictly one-at-a-time: if a poll cycle is still waiting on a Foundry follow-up run (Until_followup_run_completes, up to 10 min) when the next 30s recurrence fires, the new run is queued rather than started in parallel. This prevents two overlapping poller runs from both trying to POST a message to the same Foundry thread while a run is still active on it (400 'Can't add messages to thread while a run is active')."
+    }
+  },
+  "actions": {
+    "List_open_cases": {
+      "type": "Http",
+      "runAfter": {},
+      "inputs": {
+        "method": "POST",
+        "uri": "@{parameters('workiqBaseUrl')}/list-open-cases",
+        "headers": { "Content-Type": "application/json", "x-api-key": "@{parameters('workiqApiKey')}" },
+        "body": { "teamId": "@{parameters('teamId')}", "channelId": "@{parameters('channelId')}" }
+      }
+    },
+    "For_each_open_case": {
+      "type": "Foreach",
+      "runAfter": { "List_open_cases": ["Succeeded"] },
+      "foreach": "@body('List_open_cases')?['cases']",
+      "actions": {
+        "List_case_replies": {
+          "type": "Http",
+          "runAfter": {},
+          "inputs": {
+            "method": "POST",
+            "uri": "@{parameters('workiqBaseUrl')}/list-case-replies",
+            "headers": { "Content-Type": "application/json", "x-api-key": "@{parameters('workiqApiKey')}" },
+            "body": {
+              "teamId": "@{parameters('teamId')}",
+              "channelId": "@{parameters('channelId')}",
+              "rootMessageId": "@{items('For_each_open_case')?['root_message_id']}"
+            }
+          }
+        },
+        "Filter_to_new_human_replies": {
+          "type": "Query",
+          "runAfter": { "List_case_replies": ["Succeeded"] },
+          "inputs": {
+            "from": "@body('List_case_replies')?['replies']",
+            "where": "@and(not(equals(item()?['from']?['user']?['id'], parameters('agentIdentityUserId'))), or(equals(items('For_each_open_case')?['last_processed_reply_id'], null), greater(int(item()?['id']), int(items('For_each_open_case')?['last_processed_reply_id']))))",
+            "_comment": "Keep only replies NOT posted by the Agent Identity itself (avoid reacting to its own ack posts) AND newer than this case's LastProcessedReplyId (Teams message ids are monotonically increasing numeric-string timestamps, so a numeric comparison works as a simple watermark)."
+          }
+        },
+        "For_each_new_reply": {
+          "type": "Foreach",
+          "runAfter": { "Filter_to_new_human_replies": ["Succeeded"] },
+          "foreach": "@body('Filter_to_new_human_replies')",
+          "actions": {
+            "Post_reply_to_Foundry_thread": {
+              "type": "Http",
+              "runAfter": {},
+              "inputs": {
+                "method": "POST",
+                "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{items('For_each_open_case')?['foundry_thread_id']}/messages?api-version=2025-05-01",
+                "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ai.azure.com" },
+                "headers": { "Content-Type": "application/json" },
+                "body": {
+                  "role": "user",
+                  "content": "@{items('For_each_new_reply')?['body']?['content']}"
+                },
+                "_comment": "Continues the SAME Foundry thread mapped to this case - never a new/fresh thread - so the agent retains full case history per teams-concurrency-design.md step 6."
+              }
+            },
+            "Start_followup_run": {
+              "type": "Http",
+              "runAfter": { "Post_reply_to_Foundry_thread": ["Succeeded"] },
+              "inputs": {
+                "method": "POST",
+                "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{items('For_each_open_case')?['foundry_thread_id']}/runs?api-version=2025-05-01",
+                "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ai.azure.com" },
+                "headers": { "Content-Type": "application/json" },
+                "body": { "assistant_id": "@parameters('orchestratorAgentIdFilePlaceholder')" }
+              }
+            },
+            "Parse_followup_run": {
+              "type": "ParseJson",
+              "runAfter": { "Start_followup_run": ["Succeeded"] },
+              "inputs": {
+                "content": "@body('Start_followup_run')",
+                "schema": { "type": "object", "properties": { "id": { "type": "string" } } }
+              }
+            },
+            "Until_followup_run_completes": {
+              "type": "Until",
+              "runAfter": { "Parse_followup_run": ["Succeeded"] },
+              "expression": "@or(equals(body('Get_followup_run_status')?['status'], 'completed'), equals(body('Get_followup_run_status')?['status'], 'failed'))",
+              "limit": { "count": 60, "timeout": "PT10M" },
+              "actions": {
+                "Delay_2s": { "type": "Wait", "inputs": { "interval": { "count": 2, "unit": "Second" } } },
+                "Get_followup_run_status": {
+                  "type": "Http",
+                  "runAfter": { "Delay_2s": ["Succeeded"] },
+                  "inputs": {
+                    "method": "GET",
+                    "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{items('For_each_open_case')?['foundry_thread_id']}/runs/@{body('Parse_followup_run')?['id']}?api-version=2025-05-01",
+                    "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ai.azure.com" }
+                  }
+                }
+              }
+            },
+            "Validate_followup_run_completed": {
+              "type": "ParseJson",
+              "runAfter": { "Until_followup_run_completes": ["Succeeded"] },
+              "inputs": {
+                "content": "@body('Get_followup_run_status')?['status']",
+                "schema": { "type": "string", "enum": ["completed"] }
+              },
+              "_comment": "Purely cosmetic/diagnostic: forces THIS action to show red/Failed in run history whenever the follow-up Foundry run's final status is anything other than 'completed' (e.g. 'failed', 'expired', 'cancelled', or the Until loop's own timeout), since Get_followup_run_status itself always shows Succeeded (the HTTP call worked - it's the payload's status field that indicates failure)."
+            },
+            "Get_followup_latest_message": {
+              "type": "Http",
+              "runAfter": { "Validate_followup_run_completed": ["Succeeded", "Failed", "Skipped", "TimedOut"], "Post_reply_to_Foundry_thread": ["Succeeded"] },
+              "_comment": "Also gated on Post_reply_to_Foundry_thread having actually Succeeded - runAfter conditions are AND'ed across dependencies, so if that action Failed (e.g. transient 401/403), everything downstream (Start_followup_run/Until_followup_run_completes/Validate_followup_run_completed) is Skipped and this action must NOT run either, otherwise it would fetch and repost the thread's STALE prior message instead of a real new answer.",
+              "inputs": {
+                "method": "GET",
+                "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{items('For_each_open_case')?['foundry_thread_id']}/messages?order=desc&limit=1&api-version=2025-05-01",
+                "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ai.azure.com" }
+              }
+            },
+            "Post_ack_reply_to_Teams": {
+              "type": "Http",
+              "runAfter": { "Get_followup_latest_message": ["Succeeded"] },
+              "inputs": {
+                "method": "POST",
+                "uri": "@{parameters('workiqBaseUrl')}/post-case-reply",
+                "headers": { "Content-Type": "application/json", "x-api-key": "@{parameters('workiqApiKey')}" },
+                "body": {
+                  "teamId": "@{parameters('teamId')}",
+                  "channelId": "@{parameters('channelId')}",
+                  "rootMessageId": "@{items('For_each_open_case')?['root_message_id']}",
+                  "messageHtml": "@{body('Get_followup_latest_message')?['data'][0]?['content'][0]?['text']?['value']}"
+                },
+                "_comment": "Nests the agent's follow-up answer under the ORIGINAL case root message, never as a new top-level message, keeping the whole case in one visually isolated Teams thread per teams-concurrency-design.md step 3."
+              }
+            },
+            "Mark_reply_processed": {
+              "type": "Http",
+              "runAfter": { "Post_ack_reply_to_Teams": ["Succeeded"] },
+              "inputs": {
+                "method": "POST",
+                "uri": "@{parameters('workiqBaseUrl')}/mark-reply-processed",
+                "headers": { "Content-Type": "application/json", "x-api-key": "@{parameters('workiqApiKey')}" },
+                "body": {
+                  "caseId": "@{items('For_each_open_case')?['case_id']}",
+                  "replyId": "@{items('For_each_new_reply')?['id']}"
+                },
+                "_comment": "Persists this reply's id as the case's new watermark so it is never reprocessed on a subsequent 30-second poll."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "outputs": {}
+}
+

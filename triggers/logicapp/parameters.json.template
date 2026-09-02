@@ -3,5 +3,7 @@
   "orchestratorAgentIdFilePlaceholder": { "value": "<contents of foundry/orchestrator_agent_id.txt>" },
   "teamId": { "value": "<Teams team id for the FNOL alerts channel>" },
   "channelId": { "value": "<Teams channel id for the FNOL alerts channel>" },
-  "fnolMailboxUserId": { "value": "<UPN or object id of the FNOL intake mailbox>" }
+  "fnolMailboxUserId": { "value": "<UPN or object id of the FNOL intake mailbox>" },
+  "workiqBaseUrl": { "value": "https://<your-workiq-app>.azurewebsites.net" },
+  "workiqApiKey": { "value": "<matches WORKIQ_API_KEY app setting - resolve via Key Vault reference, do not hardcode>" }
 }

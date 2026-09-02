@@ -2,17 +2,18 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Fabric IQ Ontology Data Agent (Auto FNOL Triage)",
-    "description": "NOTE: The real Fabric IQ endpoint is an MCP (Model Context Protocol) streamable-HTTP endpoint, not a plain REST/OpenAPI endpoint (mcp_url = https://api.fabric.microsoft.com/v1/mcp/workspaces/{workspace_id}/dataagents/{data_agent_id}/agent, authenticated via a project connection using user-entra-token auth against the https://analysis.windows.net/powerbi/api audience). This OpenAPI file is kept ONLY as a fallback shape for Foundry's OpenAPI-tool authoring surface if/when it does not yet support wiring an MCP tool directly; the RECOMMENDED integration is to use Foundry's native MCP tool type. See foundry/create_orchestrator_agent.py for both wiring paths.",
+    "description": "Public-endpoint (app-autofnol-workiq.azurewebsites.net) wrapper exposing the Fabric ontology data agent's MCP endpoint to the Foundry orchestrator agent, secured by a shared API key header. Backed by triggers/webapp/tools_fabric_iq.py, which authenticates to the underlying Fabric MCP endpoint using the dedicated Agent Identity's delegated token (see shared/agent_identity_auth.py and docs/OBO_Bot_Teams_Design.docx) - required because the Fabric ontology data agent's Lakehouse binding only accepts delegated/real-user auth, not app-only tokens.",
     "version": "1.0.0"
   },
   "servers": [
-    { "url": "https://api.fabric.microsoft.com/v1/mcp/workspaces/4fb5c773-27f6-4f0d-9eb0-f040abfdd977/dataagents/f4f24b3a-8cb2-4f33-88ad-04ba57d8be8a" }
+    { "url": "https://app-autofnol-workiq.azurewebsites.net" }
   ],
   "paths": {
-    "/query": {
+    "/query-ontology": {
       "post": {
         "operationId": "queryOntology",
         "summary": "Query the AutoFNOL_Ontology graph (Policyholder, Vehicle, Adjuster, RepairShop, Policy, Claim, FraudSignal, SubrogationFlag) with a natural-language question.",
+        "security": [{ "ApiKeyAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -35,14 +36,22 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "answer": { "type": "string" },
-                    "records": { "type": "array", "items": { "type": "object" } }
+                    "answer": { "type": "string" }
                   }
                 }
               }
             }
           }
         }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
       }
     }
   }
