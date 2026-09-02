@@ -7,38 +7,53 @@ It demonstrates how to combine three "IQ" building blocks behind one orchestrato
 1. **Architecture** — how the Foundry orchestrator composes Fabric IQ, Foundry IQ, and Work IQ into one triage workflow. See [`docs/design-options.md`](docs/design-options.md).
 2. **Concurrency & context isolation** — how concurrent cases stay isolated in Teams and Foundry so follow-up replies never cross-wire. See [`docs/teams-concurrency-design.md`](docs/teams-concurrency-design.md).
 
-## Architecture diagram
+## Workflow diagram
 
-```mermaid
-flowchart TD
-    MB["FNOL Mailbox\n(Agent Identity's own inbox)"] -->|new email| LA1["Logic App #1\nEmail Intake"]
-    LA1 -->|create thread + run| ORCH["Foundry Orchestrator\nauto-fnol-triage-orchestrator"]
-    LA1 -->|post alert| API["Work IQ Webapp\nOpenAPI tool endpoints"]
-    LA1 -->|insert row| SQL["Fabric SQL: CaseThreadMap"]
-    API --> T1["Teams: new case alert"]
-
-    T1 --> T2["Adjuster follow-up reply"]
-    T2 -->|poll /replies every 30s| LA2["Logic App #2\nReply Poller (runs=1)"]
-    LA2 -->|resolve case| API
-    API -->|lookup| SQL
-    LA2 -->|continue thread + run| ORCH
-
-    ORCH <-->|connected agent tool| FIQ["Foundry IQ\nGoverned knowledge agent"]
-    ORCH -->|/query-ontology| API
-    API -->|MCP query| FAB["Fabric IQ\nOntology Data Agent"]
-    ORCH -->|/search-mail /send-email| API
-    API --> GRAPH["Microsoft Graph"]
-
-    LA2 -->|post nested reply| API
-    API --> T3["Teams: formatted answer"]
-
-    AI["Agent Identity\nsvc-fnol-agent"] -.delegated tokens.-> API
-    AI -.mailbox + Teams membership.-> MB
-    AI -.mailbox + Teams membership.-> T1
+```
+                         ┌───────────────────────────┐
+   New FNOL email ──────►│   Logic App: Email Intake  │
+   (Agent Identity's      │   (workflow.json)          │
+    own mailbox)          └─────────────┬─────────────┘
+                                        │ creates Foundry thread + posts Teams alert
+                                        ▼
+                         ┌───────────────────────────┐
+                          │  Foundry Orchestrator      │
+                          │  auto-fnol-triage-         │
+                          │  orchestrator               │
+                          └─────────────┬─────────────┘
+                                        │ routes by question type
+        ┌───────────────────────────────┼───────────────────────────────┐
+        │                               │                               │
+        ▼                               ▼                               ▼
+┌────────────────┐            ┌──────────────────┐            ┌──────────────────┐
+│   Fabric IQ      │            │   Foundry IQ       │            │    Work IQ         │
+│ Ontology Data    │            │ Knowledge Agent     │            │ Graph mail search/  │
+│ Agent             │            │ (policy wording,    │            │ send + Teams post   │
+│                   │            │  SIU playbook,       │            │                     │
+│ Policy/Claim/     │            │  regulations,        │            │                     │
+│ Vehicle/Adjuster   │            │  subrogation         │            │                     │
+│ lookups            │            │  methodology)        │            │                     │
+└────────────────┘            └──────────────────┘            └──────────────────┘
+                                        │
+                                        ▼
+                         ┌───────────────────────────┐
+                          │   Answer posted to Teams   │
+                          │   (as nested reply)         │
+                          └─────────────┬─────────────┘
+                                        │
+                                        ▼
+                         ┌───────────────────────────┐
+   Adjuster reply ──────►│  Logic App: Reply Poller   │───────► back to Orchestrator
+   in Teams thread        │  (every 30s)                │        (same Foundry thread,
+                          └───────────────────────────┘        full case context)
 ```
 
-Full diagram with legend and step-by-step flow: [`docs/architecture-diagram.md`](docs/architecture-diagram.md).
-For a simpler, one-glance view of the same flow, see [`docs/workflow-diagram.md`](docs/workflow-diagram.md).
+**In one sentence:** an email triggers an initial Teams alert from the Foundry orchestrator, and every
+Teams follow-up reply is picked up by a poller and routed back through the same orchestrator — which calls
+Fabric IQ for structured record lookups, Foundry IQ for policy/process knowledge, and Work IQ for mail
+search/send — with the answer always posted back into the same Teams thread.
+
+For the detailed Mermaid architecture diagram with legend, authentication, and concurrency notes, see [`docs/architecture-diagram.md`](docs/architecture-diagram.md).
 
 ## Architecture at a glance
 
