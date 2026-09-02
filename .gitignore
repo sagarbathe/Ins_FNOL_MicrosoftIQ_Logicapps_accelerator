@@ -29,3 +29,9 @@ foundry/fabric_sp_auth_diagnostic_notebook.ipynb
 foundry/mcp_sample_sp_auth.ipynb
 foundry/mcp_sample_user_auth.ipynb
 
+# Superseded / rejected design artifacts - kept locally only.
+generate_status_doc.py
+FNOL_Logicapps_Solution_Status.docx
+docs/generate_obo_bot_design_doc.py
+docs/OBO_Bot_Teams_Design.docx
+
