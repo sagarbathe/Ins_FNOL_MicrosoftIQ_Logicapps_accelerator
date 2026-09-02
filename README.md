@@ -38,6 +38,7 @@ flowchart TD
 ```
 
 Full diagram with legend and step-by-step flow: [`docs/architecture-diagram.md`](docs/architecture-diagram.md).
+For a simpler, one-glance view of the same flow, see [`docs/workflow-diagram.md`](docs/workflow-diagram.md).
 
 ## Architecture at a glance
 
