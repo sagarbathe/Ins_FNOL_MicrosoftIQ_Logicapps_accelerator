@@ -2,6 +2,17 @@
 
 Azure-native accelerator for triaging First Notice of Loss (FNOL) emails with **Azure AI Foundry Agent Service**, **Azure Logic Apps**, **Microsoft Fabric**, and **Microsoft Graph**.
 
+## FSI IQ Accelerator Skill
+
+This repo is one of the reference implementations for the [`fsi-iq-accelerator`](.github/skills/fsi-iq-accelerator/SKILL.md)
+Copilot CLI skill — a reusable playbook for building Microsoft IQ solution accelerators across
+Financial Services (insurance, banking, capital markets, wealth) on the Fabric IQ + Foundry IQ +
+Work IQ + orchestrator pattern. It captures the three-IQ routing framework, the domain entity
+model shape, the repo scaffold, the build sequence with verification gates, and integration
+failure modes not covered in product docs. Use the skill when asked to "build an FSI
+accelerator", "add a use case to the accelerator pattern", or "port this accelerator to a new
+domain".
+
 It demonstrates how to combine three "IQ" building blocks behind one orchestrator:
 
 1. **Architecture** — how the Foundry orchestrator composes Fabric IQ, Foundry IQ, and Work IQ into one triage workflow. See [`docs/design-options.md`](docs/design-options.md).
