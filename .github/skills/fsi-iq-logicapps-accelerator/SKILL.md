@@ -187,6 +187,44 @@ on the subscription. Sort this before a workshop, not during one.
 the agent loop and do not scale across agents. Move them into a Logic App exposed as an MCP server,
 then delete the inline copies.
 
+**Symptom: a `ParseJson` action validating a plain-string status (e.g. `"completed"`) fails with
+`InvalidJSON`.** The raw value returned by an HTTP/Foundry run-status call is an unquoted string, not
+valid JSON on its own. Build the `content` input as a quoted JSON string literal, e.g.
+`concat('"', status, '"')` — do **not** wrap it in `json()`, which parses and unwraps it right back
+to the unquoted string, reproducing the same failure.
+
+**Symptom: an Office 365 (or similar OAuth) API connection posts/reads as the wrong mailbox/user even
+though its Portal `displayName` shows the expected account.** `displayName` is cosmetic and can be
+stale or simply wrong. Check `authenticatedUser.name` on the connection resource (via `az rest` or
+the Portal's connection JSON) — that field reflects who actually authorized it. Re-authorize via the
+Portal if it doesn't match.
+
+**Symptom: a reply-detection/poller loop never picks up a human's test reply.** If the loop
+correctly excludes messages authored by the agent's own service identity (to avoid the bot replying
+to itself), a *tester* signed in as that same service identity will also be filtered out. Test by
+replying as a distinct, real human account.
+
+**Symptom: Microsoft Graph `/me/messages` (or similar) returns HTTP 400 when combining `$search` with
+`$filter`.** Graph does not support that combination on this endpoint. Fetch a broader `$search`
+result set instead (raise `$top`) and apply any date/field filtering client-side after the response
+comes back.
+
+**Symptom: an agent invents/hallucinates a plausible-looking value (an email address, ID, or name)
+instead of using real tool output.** This is most likely if the tool only returns a truncated preview
+(e.g. Graph's 255-character `bodyPreview`) or if the model is only lightly instructed to "use the
+data" rather than explicitly forbidden from inventing values. Return the **complete** field the
+decision depends on (full email body, not a preview), and add an explicit instruction that a given
+value (recipient address, ID, etc.) must be copied verbatim from tool output or the human's own
+message — otherwise the agent must stop and ask, never guess.
+
+**Symptom: publishing a Foundry agent to Teams via the native "Publish to Teams and Microsoft 365"
+feature works in isolation, but the published bot can't call the agent's Fabric IQ / Foundry IQ /
+Work IQ tools even though the same agent works fine in the Foundry playground.** That publish flow
+auto-creates its own Entra "AgentIdentity" service principal (starting with zero RBAC) and a separate
+Azure Bot Service resource — a different identity from any Agent Identity user your tools already
+authenticate as, and outside a repo's own Logic-App-based Teams integration if one exists. Don't mix
+the two Teams integration paths in the same accelerator; pick one deliberately.
+
 ## Guardrails
 
 - **Do not generalize from one instance.** Build the second domain semi-manually and record every

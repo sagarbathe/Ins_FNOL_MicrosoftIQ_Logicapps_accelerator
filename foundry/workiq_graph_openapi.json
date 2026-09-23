@@ -85,7 +85,8 @@
                       "subject": { "type": "string" },
                       "from": { "type": "string" },
                       "receivedDateTime": { "type": "string" },
-                      "bodyPreview": { "type": "string" },
+                      "bodyPreview": { "type": "string", "description": "Truncated ~255-char Graph preview - NOT the full email. Do not rely on this for instructions/addresses." },
+                      "body": { "type": "string", "description": "COMPLETE plain-text email body. Always read this field in FULL before acting on any instruction or address it contains - never invent/hallucinate a recipient address; use only what is literally stated here." },
                       "webLink": { "type": "string" }
                     }
                   }

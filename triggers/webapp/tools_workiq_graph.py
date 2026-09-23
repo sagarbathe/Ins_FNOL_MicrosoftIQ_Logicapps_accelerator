@@ -24,7 +24,10 @@ Retrieval API, which can be swapped in later by changing only the
 touching the OpenAPI contract the Foundry agent calls.
 """
 import os
+import re
 import sys
+import html
+from datetime import datetime, timedelta, timezone
 
 import requests
 from msal import ConfidentialClientApplication
@@ -132,27 +135,75 @@ def search_mail(query: str, top: int = 5) -> list[dict]:
 
     Provides Work IQ-equivalent mail-search capability for the orchestrator
     agent.
+
+    Fetches a broader $search result set (Graph's /me/messages endpoint does
+    not allow combining $search with $filter in the same request - HTTP 400
+    - so a receivedDateTime $filter cannot be used here) and then filters
+    the results down to the last 3 months client-side, returning up to
+    `top` matches. `top` is also floored to a sane minimum regardless of
+    what the caller passes: an LLM-supplied top=1 previously caused the
+    tool to return only the single highest-relevance $search hit (often an
+    unrelated older email), making the agent conclude "no relevant email
+    found" even when a real routing-guidance email existed further down the
+    results.
     """
     token = _get_graph_token()
+    top = max(top, 10)
+    fetch_top = max(top, 25)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
     resp = requests.get(
         f"{GRAPH_BASE}/me/messages",
         headers={"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"},
-        params={"$search": f'"{query}"', "$top": top},
+        params={
+            "$search": f'"{query}"',
+            "$top": fetch_top,
+            "$select": "subject,from,receivedDateTime,webLink,bodyPreview,body",
+        },
         timeout=30,
     )
     resp.raise_for_status()
     hits = []
     for msg in resp.json().get("value", []):
+        received = msg.get("receivedDateTime")
+        if received:
+            try:
+                received_dt = datetime.fromisoformat(received.replace("Z", "+00:00"))
+                if received_dt < cutoff:
+                    continue
+            except ValueError:
+                pass
+        if len(hits) >= top:
+            break
         hits.append(
             {
                 "subject": msg.get("subject"),
                 "from": (msg.get("from", {}).get("emailAddress", {}) or {}).get("address"),
                 "receivedDateTime": msg.get("receivedDateTime"),
                 "bodyPreview": msg.get("bodyPreview"),
+                "body": _extract_full_body_text(msg.get("body") or {}),
                 "webLink": msg.get("webLink"),
             }
         )
     return hits
+
+
+def _extract_full_body_text(body: dict) -> str:
+    """Return the COMPLETE email body as plain text (not the 255-character
+    `bodyPreview` Graph field). The FNOL triage agent must read this field
+    in full before acting on any instruction/address contained in an email -
+    it must never invent/hallucinate a recipient address that only
+    resembles one seen elsewhere; it must use exactly what this field
+    states.
+    """
+    content = body.get("content") or ""
+    if (body.get("contentType") or "").lower() == "html":
+        content = re.sub(r"(?is)<(script|style).*?>.*?(</\1>)", "", content)
+        content = re.sub(r"(?s)<br\s*/?>|</p>|</div>|</tr>", "\n", content)
+        content = re.sub(r"(?s)<[^>]+>", "", content)
+        content = html.unescape(content)
+        content = re.sub(r"[ \t]+", " ", content)
+        content = re.sub(r"\n{3,}", "\n\n", content).strip()
+    return content
 
 
 def send_email(to: str, subject: str, body_text: str, cc: str = "") -> dict:

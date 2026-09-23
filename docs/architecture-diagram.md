@@ -6,6 +6,10 @@ This diagram reflects the current Foundry-native, Logic Apps implementation in t
 
 Fabric IQ and Foundry IQ can be provided either by pre-existing tenant assets or built from scratch from this repo using `datagen/`, `fabric/`, and `foundry/kb_docs/` plus the new build scripts; the runtime architecture is the same in either case.
 
+> For the exact, action-by-action call sequence of both Logic Apps (including every tool call the
+> orchestrator agent makes and known failure modes already fixed in this repo), see
+> [`detailed-call-sequence.md`](detailed-call-sequence.md).
+
 ```mermaid
 flowchart TD
     subgraph Intake["📥 Email Intake"]
