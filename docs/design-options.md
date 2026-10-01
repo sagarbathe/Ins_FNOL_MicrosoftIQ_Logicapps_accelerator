@@ -40,7 +40,11 @@ Why this composition works well:
   LLM, covering: routing structured-data questions to Fabric IQ, routing
   general-knowledge questions to Foundry IQ, fraud/subrogation red-flag
   assessment logic, CAT-bulletin and SIU-routing-change lookups via Work IQ,
-  and how to summarize outcomes for the calling trigger to post to Teams.
+  **decomposing compound/multi-part follow-up questions into independent
+  sub-questions so every required tool is called and one consolidated
+  answer is synthesized** (see `docs/detailed-call-sequence.md` Known Issue
+  #9), and how to summarize outcomes for the calling trigger to post to
+  Teams.
 - The **Fabric IQ** and **Foundry IQ** tools are pre-existing governed
   services; the orchestrator only needs to be wired to call them.
 - Foundry Agent Service natively supports **connected/sub-agents** (agent

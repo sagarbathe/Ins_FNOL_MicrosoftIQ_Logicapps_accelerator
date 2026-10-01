@@ -85,6 +85,7 @@ For the detailed Mermaid architecture diagram with legend, authentication, and c
 - Detect SIU fraud red flags from both the intake narrative and follow-up grounded lookups.
 - Assess subrogation candidacy from case facts and follow-up investigation.
 - Support Teams-based follow-up conversations for coverage, vehicle, policyholder, claim, CAT bulletin, and routing questions.
+- Decompose **compound/multi-part follow-up questions** (e.g. "what's the fraud assessment policy, and does this policyholder have fraud history?") into independent sub-questions, route each to the right tool (Fabric IQ vs. Foundry IQ vs. Work IQ), and synthesize one consolidated, per-part-grounded answer.
 - Query Fabric IQ across multiple related entity types when a follow-up asks for more than one record category.
 - Send escalation emails on request (for example to SIU or adjuster teams) via Microsoft Graph **only when explicitly asked**, never by guessing recipients.
 
@@ -159,6 +160,7 @@ foundry/
   mcp_sample_user_auth.ipynb        # Sample notebook for calling Fabric MCP endpoints with delegated user auth.
   orchestrator_agent_id.txt         # Last-created orchestrator agent id, consumed by deployment scripts.
   run_agent_thread.py               # Helper to create/continue Foundry threads and poll runs.
+  inspect_run_trace.py              # CLI to list threads/runs and print full tool-call traces directly from the Threads/Runs/RunSteps API - workaround for the Foundry portal Traces tab only showing Playground-originated conversations (see docs/detailed-call-sequence.md Known Issues).
   test_foundry_agent.py             # Smoke test for the Foundry IQ knowledge agent.
   tools_fabric_iq.py                # Python facade that proxies ontology questions to the Fabric MCP data agent.
   tools_workiq_graph.py             # Legacy/local Work IQ Graph helper module under `foundry/`.
