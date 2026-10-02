@@ -244,6 +244,41 @@ The reference implementation now assumes **delegated auth via a dedicated Agent 
 | Webapp deployment | `deploy_webapp.py` base64-encodes the token cache, chunks it across app settings, and `agent_identity_auth.py` reassembles it at runtime. |
 | Default mode | `AUTH_MODE=agent_identity` |
 
+## Agent run-history sync (`AgentRunHistory`)
+
+Persists the same Foundry Threads/Runs/RunSteps trace that `foundry/inspect_run_trace.py`
+prints to the console into a queryable `AgentRunHistory` table in the same Fabric SQL database
+that hosts `CaseThreadMap` — one row per user message, agent message, and tool call, including
+`ParentThreadId` links for connected-agent sub-threads (e.g. Foundry IQ's internal sub-thread
+spawned when the orchestrator calls it as a tool). See
+[`docs/agent-governance-observability-mvp.md`](docs/agent-governance-observability-mvp.md)
+section 3 for the full design.
+
+**One-time setup:**
+
+```
+cd C:\Sagar\MicrosoftIQ\Ins_FNOL_MicrosoftIQ_Logicapps_accelerator
+python shared\create_agent_run_history_table.py   # creates the AgentRunHistory table + indexes (idempotent)
+```
+
+**Prerequisites to run the sync:**
+
+- `az login` — as a user with the **Foundry User** role on the project (used to read
+  Threads/Runs/RunSteps).
+- `shared/bootstrap_agent_identity_tokens.py` must have been run at least once (used to write to
+  Fabric SQL via the `svc-fnol-agent` Agent Identity's cached SQL token) — skip if already done.
+
+**Run the sync:**
+
+```
+python foundry\sync_run_history.py                    # syncs the 30 most recent threads
+python foundry\sync_run_history.py --limit 100         # syncs more threads
+python foundry\sync_run_history.py thread_abc123        # syncs just one specific thread
+```
+
+Safe to re-run anytime — already-synced rows are skipped (idempotent upsert keyed on
+`ThreadId`/`RunId`/`StepId`). There is no scheduled trigger yet; it's manual/on-demand only.
+
 ## Known operational gotchas
 
 - Use the **Foundry User** RBAC role for Logic App managed identities calling Foundry thread/message/run APIs; legacy **Cognitive Services User** alone is not sufficient for the current Foundry data plane.
