@@ -8,6 +8,7 @@ shared API key header validated in-app (WORKIQ_API_KEY app setting) since
 App Service's built-in auth is not required for this internal tool-calling
 scenario.
 """
+import logging
 import os
 
 from flask import Flask, jsonify, request
@@ -26,6 +27,20 @@ from post_to_teams import (
 )
 
 app = Flask(__name__)
+
+# MVP observability (Option A - see docs/agent-governance-observability-mvp.md):
+# every route already catches all exceptions and returns a generic 500 so one
+# bad call never crashes the gunicorn worker, but previously the real
+# exception/traceback was never logged anywhere - only `str(e)` went back to
+# the caller (the Foundry agent), which is how the Fabric-capacity-paused
+# outage took so long to diagnose. Flask/gunicorn write app.logger output to
+# stdout/stderr, which App Service's built-in logging captures - visible via
+# `az webapp log tail` or the Kudu Log stream (see the doc above for exact
+# steps). This is a lightweight, zero-new-dependency fix; a full
+# Application-Insights-backed version (Option B) can replace it later if
+# alerting/90-day retention/KQL querying is needed.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+app.logger.setLevel(logging.INFO)
 
 API_KEY = os.environ.get("WORKIQ_API_KEY", "")
 
@@ -48,6 +63,7 @@ def search_documents_route():
     try:
         results = search_documents(query, top=top)
     except Exception as e:
+        app.logger.exception("search_documents_route failed for query=%r", query)
         return jsonify({"error": str(e)}), 500
     return jsonify(results), 200
 
@@ -64,6 +80,7 @@ def search_mail_route():
     try:
         results = search_mail(query, top=top)
     except Exception as e:
+        app.logger.exception("search_mail_route failed for query=%r", query)
         return jsonify({"error": str(e)}), 500
     return jsonify(results), 200
 
@@ -82,6 +99,7 @@ def send_email_route():
     try:
         result = send_email(to, subject, body_text, cc=cc)
     except Exception as e:
+        app.logger.exception("send_email_route failed for to=%r subject=%r", to, subject)
         return jsonify({"error": str(e)}), 500
     return jsonify(result), 200
 
@@ -97,6 +115,7 @@ def query_ontology_route():
     try:
         answer = query_ontology(question)
     except Exception as e:
+        app.logger.exception("query_ontology_route failed for question=%r", question)
         return jsonify({"error": str(e)}), 500
     return jsonify({"answer": answer}), 200
 
@@ -127,6 +146,7 @@ def post_new_case_alert_route():
     try:
         message_id = post_new_case_alert(team_id, channel_id, message_html)
     except Exception as e:
+        app.logger.exception("post_new_case_alert_route failed for team=%r channel=%r", team_id, channel_id)
         return jsonify({"error": str(e)}), 500
     return jsonify({"id": message_id}), 200
 
@@ -148,6 +168,10 @@ def post_case_reply_route():
     try:
         message_id = post_case_reply(team_id, channel_id, root_message_id, message_html)
     except Exception as e:
+        app.logger.exception(
+            "post_case_reply_route failed for team=%r channel=%r root_message=%r",
+            team_id, channel_id, root_message_id,
+        )
         return jsonify({"error": str(e)}), 500
     return jsonify({"id": message_id}), 200
 
@@ -177,6 +201,10 @@ def resolve_case_reply_route():
         finally:
             conn.close()
     except Exception as e:
+        app.logger.exception(
+            "resolve_case_reply_route failed for team=%r channel=%r reply_to=%r",
+            team_id, channel_id, reply_to_id,
+        )
         return jsonify({"error": str(e)}), 500
     if result is None:
         return jsonify({"error": "no matching case found"}), 404
@@ -205,6 +233,7 @@ def insert_case_thread_map_route():
     try:
         inserted = insert_case_thread_map(case_id, team_id, channel_id, root_message_id, foundry_thread_id)
     except Exception as e:
+        app.logger.exception("insert_case_thread_map_route failed for case=%r", case_id)
         return jsonify({"error": str(e)}), 500
     return jsonify({"inserted": inserted}), 200
 
@@ -230,6 +259,7 @@ def list_open_cases_route():
     try:
         cases = list_open_cases(team_id, channel_id)
     except Exception as e:
+        app.logger.exception("list_open_cases_route failed for team=%r channel=%r", team_id, channel_id)
         return jsonify({"error": str(e)}), 500
     return jsonify({"cases": cases}), 200
 
@@ -251,6 +281,10 @@ def list_case_replies_route():
     try:
         replies = list_case_replies(team_id, channel_id, root_message_id)
     except Exception as e:
+        app.logger.exception(
+            "list_case_replies_route failed for team=%r channel=%r root_message=%r",
+            team_id, channel_id, root_message_id,
+        )
         return jsonify({"error": str(e)}), 500
     return jsonify({"replies": replies}), 200
 
@@ -271,6 +305,7 @@ def mark_reply_processed_route():
     try:
         mark_reply_processed(case_id, reply_id)
     except Exception as e:
+        app.logger.exception("mark_reply_processed_route failed for case=%r reply=%r", case_id, reply_id)
         return jsonify({"error": str(e)}), 500
     return jsonify({"ok": True}), 200
 

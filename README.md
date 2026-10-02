@@ -17,6 +17,7 @@ It demonstrates how to combine three "IQ" building blocks behind one orchestrato
 
 1. **Architecture** — how the Foundry orchestrator composes Fabric IQ, Foundry IQ, and Work IQ into one triage workflow. See [`docs/design-options.md`](docs/design-options.md).
 2. **Concurrency & context isolation** — how concurrent cases stay isolated in Teams and Foundry so follow-up replies never cross-wire. See [`docs/teams-concurrency-design.md`](docs/teams-concurrency-design.md).
+3. **Agent governance & observability (MVP)** — onboarding this agent to the Agent 365 registry, Entra Agent ID least-privilege basics, and webapp exception logging. See [`docs/agent-governance-observability-mvp.md`](docs/agent-governance-observability-mvp.md).
 
 ## Workflow diagram
 
@@ -161,6 +162,7 @@ foundry/
   orchestrator_agent_id.txt         # Last-created orchestrator agent id, consumed by deployment scripts.
   run_agent_thread.py               # Helper to create/continue Foundry threads and poll runs.
   inspect_run_trace.py              # CLI to list threads/runs and print full tool-call traces directly from the Threads/Runs/RunSteps API - workaround for the Foundry portal Traces tab only showing Playground-originated conversations (see docs/detailed-call-sequence.md Known Issues).
+  sync_run_history.py               # Syncs Threads/Runs/RunSteps into the Fabric SQL AgentRunHistory table (idempotent); see docs/agent-governance-observability-mvp.md section 3.
   test_foundry_agent.py             # Smoke test for the Foundry IQ knowledge agent.
   tools_fabric_iq.py                # Python facade that proxies ontology questions to the Fabric MCP data agent.
   tools_workiq_graph.py             # Legacy/local Work IQ Graph helper module under `foundry/`.
@@ -176,6 +178,8 @@ shared/
   bootstrap_agent_identity_tokens.py # One-time bootstrap for Graph + Fabric + SQL tokens into one MSAL cache.
   case_thread_store_schema.sql      # Fabric SQL schema for the CaseThreadMap correlation table and index.
   create_case_thread_map.py         # Creates/updates the CaseThreadMap table in Fabric SQL.
+  agent_run_history_schema.sql      # Fabric SQL schema for the AgentRunHistory run/trace persistence table.
+  create_agent_run_history_table.py # Creates the AgentRunHistory table (+ indexes) in Fabric SQL.
   post_to_teams.py                  # Shared Teams posting + case-thread persistence helpers used outside the webapp.
 
 triggers/logicapp/
