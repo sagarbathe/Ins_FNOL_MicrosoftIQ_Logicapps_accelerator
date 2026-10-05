@@ -138,35 +138,66 @@
               },
               "_comment": "Purely cosmetic/diagnostic: forces THIS action to show red/Failed in run history whenever the follow-up Foundry run's final status is anything other than 'completed' (e.g. 'failed', 'expired', 'cancelled', or the Until loop's own timeout), since Get_followup_run_status itself always shows Succeeded (the HTTP call worked - it's the payload's status field that indicates failure)."
             },
-            "Get_followup_latest_message": {
-              "type": "Http",
+            "If_followup_run_completed": {
+              "type": "If",
               "runAfter": { "Validate_followup_run_completed": ["Succeeded", "Failed", "Skipped", "TimedOut"], "Post_reply_to_Foundry_thread": ["Succeeded"] },
-              "_comment": "Also gated on Post_reply_to_Foundry_thread having actually Succeeded - runAfter conditions are AND'ed across dependencies, so if that action Failed (e.g. transient 401/403), everything downstream (Start_followup_run/Until_followup_run_completes/Validate_followup_run_completed) is Skipped and this action must NOT run either, otherwise it would fetch and repost the thread's STALE prior message instead of a real new answer.",
-              "inputs": {
-                "method": "GET",
-                "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{items('For_each_open_case')?['foundry_thread_id']}/messages?order=desc&limit=1&api-version=2025-05-01",
-                "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ai.azure.com" }
-              }
-            },
-            "Post_ack_reply_to_Teams": {
-              "type": "Http",
-              "runAfter": { "Get_followup_latest_message": ["Succeeded"] },
-              "inputs": {
-                "method": "POST",
-                "uri": "@{parameters('workiqBaseUrl')}/post-case-reply",
-                "headers": { "Content-Type": "application/json", "x-api-key": "@{parameters('workiqApiKey')}" },
-                "body": {
-                  "teamId": "@{parameters('teamId')}",
-                  "channelId": "@{parameters('channelId')}",
-                  "rootMessageId": "@{items('For_each_open_case')?['root_message_id']}",
-                  "messageHtml": "@{body('Get_followup_latest_message')?['data'][0]?['content'][0]?['text']?['value']}"
+              "expression": {
+                "and": [
+                  { "equals": ["@body('Get_followup_run_status')?['status']", "completed"] }
+                ]
+              },
+              "_comment": "Guards against the echo bug found 2026-10-02: previously, Get_followup_latest_message/Post_ack_reply_to_Teams ran unconditionally after any run outcome, so a FAILED follow-up run (no new agent message produced) caused the thread's 'latest message' - the human's own just-posted question - to be fetched and reposted back to Teams, looking exactly like the agent was echoing the question. Now, a failed/expired/timed-out run posts an explicit error notice instead. Also gated on Post_reply_to_Foundry_thread having actually Succeeded, for the same reason as before (stale-message risk on a 401/403).",
+              "actions": {
+                "Get_followup_latest_message": {
+                  "type": "Http",
+                  "runAfter": {},
+                  "inputs": {
+                    "method": "GET",
+                    "uri": "@{parameters('foundryProjectEndpoint')}/threads/@{items('For_each_open_case')?['foundry_thread_id']}/messages?order=desc&limit=1&api-version=2025-05-01",
+                    "authentication": { "type": "ManagedServiceIdentity", "audience": "https://ai.azure.com" }
+                  }
                 },
-                "_comment": "Nests the agent's follow-up answer under the ORIGINAL case root message, never as a new top-level message, keeping the whole case in one visually isolated Teams thread per teams-concurrency-design.md step 3."
+                "Post_ack_reply_to_Teams": {
+                  "type": "Http",
+                  "runAfter": { "Get_followup_latest_message": ["Succeeded"] },
+                  "inputs": {
+                    "method": "POST",
+                    "uri": "@{parameters('workiqBaseUrl')}/post-case-reply",
+                    "headers": { "Content-Type": "application/json", "x-api-key": "@{parameters('workiqApiKey')}" },
+                    "body": {
+                      "teamId": "@{parameters('teamId')}",
+                      "channelId": "@{parameters('channelId')}",
+                      "rootMessageId": "@{items('For_each_open_case')?['root_message_id']}",
+                      "messageHtml": "@{body('Get_followup_latest_message')?['data'][0]?['content'][0]?['text']?['value']}"
+                    },
+                    "_comment": "Nests the agent's follow-up answer under the ORIGINAL case root message, never as a new top-level message, keeping the whole case in one visually isolated Teams thread per teams-concurrency-design.md step 3."
+                  }
+                }
+              },
+              "else": {
+                "actions": {
+                  "Post_error_reply_to_Teams": {
+                    "type": "Http",
+                    "runAfter": {},
+                    "inputs": {
+                      "method": "POST",
+                      "uri": "@{parameters('workiqBaseUrl')}/post-case-reply",
+                      "headers": { "Content-Type": "application/json", "x-api-key": "@{parameters('workiqApiKey')}" },
+                      "body": {
+                        "teamId": "@{parameters('teamId')}",
+                        "channelId": "@{parameters('channelId')}",
+                        "rootMessageId": "@{items('For_each_open_case')?['root_message_id']}",
+                        "messageHtml": "⚠️ <b>Sorry, something went wrong processing your last question</b> (Foundry run status: @{body('Get_followup_run_status')?['status']}). Please try asking again - this is usually a transient backend issue."
+                      },
+                      "_comment": "Explicit, honest failure notice instead of silently re-echoing the human's own question - see If_followup_run_completed's comment for the bug this replaces."
+                    }
+                  }
+                }
               }
             },
             "Mark_reply_processed": {
               "type": "Http",
-              "runAfter": { "Post_ack_reply_to_Teams": ["Succeeded"] },
+              "runAfter": { "If_followup_run_completed": ["Succeeded"] },
               "inputs": {
                 "method": "POST",
                 "uri": "@{parameters('workiqBaseUrl')}/mark-reply-processed",

@@ -26,18 +26,24 @@ USAGE
 
 NOTES
 -----
-- SourceChannel is best-effort: 'case' if the thread is found in
-  CaseThreadMap (i.e. it's a real email/Teams case, either intake or a
-  Teams-continued follow-up), else 'unknown' (most likely a Foundry
-  Playground test conversation, or a connected-agent's internal sub-thread
-  before its ParentThreadId backfill runs - see below). CaseThreadMap does
-  not currently distinguish "email" vs "teams" as separate values, so this
-  script does not invent that distinction either.
-- ParentThreadId is backfilled in a second pass: while walking tool_calls
+- CaseId/SourceChannel are looked up per-thread against CaseThreadMap by
+  FoundryThreadId. SourceChannel is 'case' if found there (i.e. it's a real
+  email-intake case, including all of its Teams follow-up replies - they
+  all share the same CaseId/ThreadId), else 'unknown' for a thread that
+  isn't itself a CaseThreadMap row - a Foundry Playground test conversation,
+  or (before the second-pass backfill below runs) a connected-agent's
+  internal sub-thread. CaseThreadMap does not currently distinguish "email"
+  vs "teams" as separate values, so this script does not invent that
+  distinction either.
+- ParentThreadId, CaseId, and SourceChannel are backfilled for
+  connected-agent sub-threads in a second pass: while walking tool_calls
   steps, any `connected_agent` call's output includes the *child* thread_id/
   run_id it spawned (e.g. Foundry IQ's internal sub-thread) - this script
-  records those links and, after processing all requested threads, updates
-  every already-inserted row for that child thread with ParentThreadId set.
+  records those links and, after processing all requested threads, sets
+  ParentThreadId on every already-inserted row for that child thread, and
+  (since a sub-thread is never itself a CaseThreadMap row) also copies the
+  parent thread's CaseId/SourceChannel onto any child rows that came up
+  NULL, so sub-thread activity is still attributable to the right case.
 """
 import argparse
 import itertools
@@ -280,11 +286,22 @@ def main():
         print(f"  {thread_id}: +{n} new row(s)")
 
     # Second pass: backfill ParentThreadId for any connected-agent child
-    # threads discovered above.
+    # threads discovered above - and inherit the parent's CaseId/SourceChannel
+    # for any child rows that came up NULL (sub-threads are never themselves
+    # rows in CaseThreadMap, but they logically belong to the parent's case).
     for child_thread_id, parent_thread_id in child_thread_links.items():
         cursor.execute(
             "UPDATE AgentRunHistory SET ParentThreadId = ? WHERE ThreadId = ? AND ParentThreadId IS NULL",
             (parent_thread_id, child_thread_id),
+        )
+        cursor.execute(
+            """
+            UPDATE AgentRunHistory
+            SET CaseId = (SELECT TOP 1 CaseId FROM AgentRunHistory WHERE ThreadId = ? AND CaseId IS NOT NULL),
+                SourceChannel = (SELECT TOP 1 SourceChannel FROM AgentRunHistory WHERE ThreadId = ? AND CaseId IS NOT NULL)
+            WHERE ThreadId = ? AND CaseId IS NULL
+            """,
+            (parent_thread_id, parent_thread_id, child_thread_id),
         )
     conn.commit()
 
