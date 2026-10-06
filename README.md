@@ -135,7 +135,8 @@ High-level deployment flow in `deploy_solution.ps1`:
 
 ```text
 fabric/
-  create_ontology.py                # Creates the AutoFNOL ontology item over lakehouse tables.
+  create_ontology.py                # Creates the AutoFNOL ontology item (Gen 1 / old experience) over lakehouse tables. Wired into the Fabric Data Agent today.
+  create_ontology_v2.py             # Creates AutoFNOL_Ontology_V2 (Gen 2 / new experience, TMDL-based) over the same lakehouse. Kept alongside Gen 1 until Fabric Data Agents support Gen 2 ontologies. See version history below.
   configure_data_agent.py           # Configures the Fabric data agent against raw lakehouse tables.
   configure_data_agent_ontology.py  # Reconfigures the data agent to use the ontology graph once available.
   add_adjuster_relationship.py      # Patch helper for older ontologies missing Claim->Adjuster relationship.
@@ -213,7 +214,19 @@ triggers/azure-function/
   tools_workiq_graph.py                          # Function-side Work IQ Graph helper implementation.
 ```
 
-## Work IQ webapp endpoints
+### Ontology versions (Gen 1 vs Gen 2)
+
+Both ontology scripts are maintained side by side because Fabric Data Agents don't yet support
+Generation 2 ("new experience") ontologies — `AutoFNOL_Ontology` (Gen 1) stays wired into the
+Data Agent, while `AutoFNOL_Ontology_V2` (Gen 2) is used for new-experience portal features
+(entity Instances, graph model, etc.). Update both scripts' history here when either changes.
+
+| Script | Version | Description of changes |
+| --- | --- | --- |
+| `fabric/create_ontology.py` | v1 (Gen 1, old experience, entity-type JSON definition) | Original ontology builder; unchanged this cycle. |
+| `fabric/create_ontology_v2.py` | v2 (Gen 2, new experience, TMDL definition) | Initial version: builds TMDL parts (`.platform`, `database.tmdl`, `model.tmdl`, `namespaces/default.tmdl`, `expressions.tmdl`, `relationships.tmdl`, `entityRelationships.tmdl`, `tables/*.tmdl`, `entities/*.tmdl`) mirroring the Gen 1 entity/relationship model, including entity/property/relationship descriptions and synonyms. Fix: table partitions emit `ONT_WorkspaceId` / `ONT_ItemId` / `ONT_ItemKind` / `ONT_ItemName` annotations — required for the Fabric portal to resolve which Fabric item backs each table; without them, entity Instances showed "The kind of Fabric item this data source points to couldn't be identified." |
+
+
 
 `triggers/webapp/app.py` currently exposes 12 routes:
 
