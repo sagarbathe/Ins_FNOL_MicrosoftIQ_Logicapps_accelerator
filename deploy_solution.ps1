@@ -106,6 +106,19 @@ if (-not (Should-Skip 3)) {
     }
 }
 
+Step-Header "3b" "Build Ontology v2 (Gen 2 / new experience, TMDL) - optional, not yet used by the Fabric Data Agent"
+if (-not (Should-Skip "3b")) {
+    if ($env:FABRIC_ONTOLOGY_V2_ID) {
+        Write-Host "FABRIC_ONTOLOGY_V2_ID already set - assuming AutoFNOL_Ontology_V2 already exists, skipping build." -ForegroundColor Yellow
+    } else {
+        python "$RepoRoot\fabric\create_ontology_v2.py"
+        if (-not $?) { throw "Ontology v2 creation failed." }
+        Write-Host "Copy the generated ontology_v2_id.txt value into .env as FABRIC_ONTOLOGY_V2_ID so reruns skip this step." -ForegroundColor Yellow
+        Write-Host "This step is optional: Fabric Data Agents don't yet support Gen 2 ontologies, so step 3's AutoFNOL_Ontology (Gen 1) remains the one wired into the Data Agent. Skip with -SkipSteps '3b' if you don't need the new-experience ontology yet." -ForegroundColor Yellow
+    }
+}
+
+
 Step-Header 4 "Build Foundry IQ search index and knowledge agent"
 if (-not (Should-Skip 4)) {
     $agentIdFile = "$RepoRoot\foundry\foundry_knowledge_agent_id.txt"

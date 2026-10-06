@@ -110,6 +110,7 @@ High-level deployment flow in `deploy_solution.ps1`:
 1. **Generate synthetic Auto FNOL data** — creates sample CSVs under `datagen/output` (skipped if already present).
 2. **Load data into the Fabric lakehouse** — uploads and loads the generated CSVs into Fabric tables (skipped if `FABRIC_LAKEHOUSE_DATA_LOADED=true`).
 3. **Build Fabric IQ ontology and configure the data agent** — creates the ontology and data agent over the lakehouse tables (skipped if `FABRIC_DATA_AGENT_ID` or `FABRIC_ONTOLOGY_ID` is already set).
+3b. **(Optional) Build Ontology v2 (Gen 2 / new experience, TMDL)** — creates `AutoFNOL_Ontology_V2` over the same lakehouse tables (skipped if `FABRIC_ONTOLOGY_V2_ID` is already set). Not yet used by the Fabric Data Agent; see [Ontology versions](#ontology-versions-gen-1-vs-gen-2) below. Skip with `-SkipSteps "3b"` if not needed.
 4. **Build Foundry IQ search index and knowledge agent** — chunks `foundry/kb_docs` into Azure AI Search and creates the knowledge agent (skipped if `FOUNDRY_KNOWLEDGE_AGENT_ID` is set or `foundry/foundry_knowledge_agent_id.txt` already exists).
 5. **Create Agent Identity user** — create the dedicated Entra user and pause for license/team/workspace/Foundry access setup.
 6. **Register Agent Identity public-client app** — create the delegated-auth app registration and grant Graph/Fabric/SQL delegated scopes.
