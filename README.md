@@ -46,100 +46,63 @@ not use the native preview Logic Apps Agent action. The human investigation
 agent chooses its allowed native MCP tools inside Foundry. There is no v1
 OpenAPI proxy, Teams reply poller or Fabric SQL `CaseThreadMap` dependency.
 
-### Architecture and trust boundaries
+### Architecture at a glance
 
-Solid arrows show runtime requests or returned data. Dotted arrows show
-deployment/configuration dependencies or explicitly requested recovery.
+Read top to bottom: an email becomes a private case, an assigned analyst opens
+it in Teams, and the investigation agent retrieves only authorized IQ data.
+Solid arrows show the main flow. The dotted arrow is an optional,
+human-confirmed escalation.
 
 ```mermaid
 flowchart TB
-    subgraph Email["1. Microsoft 365 email intake"]
-        Sender["Policyholder demo sender<br/>Manual Outlook email"]
-        Mailbox["Approved pilot mailbox<br/>Exact subject rule and isolated folder"]
-        Outlook["Dedicated Office 365 connector<br/>Authorized as intake mailbox"]
-        Sender -->|"[FNOL-V2] [SYNTHETIC] subject markers"| Mailbox
-        Mailbox --> Outlook
+    subgraph Email["1. Email intake and initial screening"]
+        Mailbox["Policyholder email<br/>Approved Outlook mailbox"]
+        Intake["Logic App + intake API<br/>Private case + tool-free<br/>Foundry screening"]
+        Card["Teams notification<br/>Case link only"]
+        Mailbox --> Intake --> Card
     end
 
-    subgraph Automation["2. Azure Logic Apps - autonomous orchestration"]
-        Workflow["Consumption Logic App<br/>One-minute folder poll<br/>Full body; no attachment extraction"]
-        Notify["Dedicated Teams connector<br/>Authorized native operator"]
-        Operator["Approved operator mailbox<br/>Minimal failure/reconciliation alert"]
-        Workflow -->|"FNOL notification only"| Notify
-        Workflow -->|"Failed or timed-out run; no narrative"| Operator
+    subgraph Human["2. Private investigation"]
+        Backend["Personal Teams app + backend<br/>Assigned analyst and user OBO"]
+        Agent["Foundry investigation<br/>Read-only MCP tools"]
+        Backend -->|"Current user"| Agent
     end
 
-    subgraph Application["3. App Service - private case and investigation APIs"]
-        Intake["Email intake API<br/>Validate workflow MI token and envelope<br/>Normalize HTML; deterministic EMAIL case ID"]
-        Backend["Private Teams API<br/>Validate user JWT and case assignment<br/>Server-side OBO; owned conversation context"]
-        Vault["Azure Key Vault<br/>Client credentials and encryption key"]
-        Blob["Encrypted Azure Blob state<br/>Cases, sessions, histories, previews and run metadata<br/>VNet integration, private DNS and Blob private endpoint"]
-        Vault -.->|"App MI retrieves runtime secrets"| Intake
-        Vault -.->|"App MI retrieves runtime secrets"| Backend
-        Intake -->|"App MI; original email and screening state"| Blob
-        Backend -->|"App MI; authorized private state access"| Blob
+    subgraph IQ["3. Authorized IQ grounding"]
+        Fabric["Fabric IQ<br/>Ontology and lakehouse"]
+        Knowledge["Foundry IQ<br/>Search and user ACLs"]
+        Work["Work IQ<br/>User's M365 content"]
     end
 
-    subgraph Foundry["4. Foundry - two distinct pinned agents"]
-        Screening["Tool-free screening agent<br/>JSON summary, quoted risks, next steps and unknowns<br/>Unverified narrative only; no IQ retrieval"]
-        Investigation["Read-only investigation agent<br/>Current user's delegated Foundry credential<br/>Only approved native MCP tools"]
-    end
-
-    subgraph Human["5. Microsoft Teams - private human interaction"]
-        Channel["Approved Teams channel<br/>Case pointer and private deep link only"]
-        Analyst["Assigned analyst<br/>Own Microsoft 365 / Entra identity"]
-        Tab["Personal Teams app<br/>Full email, screening, private answers and report export"]
-        Entra["Microsoft Entra ID<br/>Teams SSO, OBO and user consent"]
-        Graph["Microsoft Graph /me/sendMail<br/>Signed-in user's mailbox<br/>Only separately confirmed escalation"]
-        Channel -->|"Investigate privately"| Tab
-        Analyst --> Tab
-        Tab -->|"Teams SSO"| Entra
-        Entra -->|"API access_as_user token"| Tab
-        Tab -->|"Bearer-authenticated case and chat requests"| Backend
-        Backend -->|"Server-side OBO token exchange"| Entra
-        Entra -->|"Current-user downstream token"| Backend
-        Backend -->|"Immutable preview, then explicit confirmation<br/>Delegated Mail.Send"| Graph
-    end
-
-    subgraph Grounding["6. IQ grounding - requesting user's access boundaries"]
-        Ontology["Fabric IQ Gen 2 ontology<br/>Native ontology MCP endpoint"]
-        Lakehouse["Owned Fabric Lakehouse<br/>Nine synthetic tables"]
-        Knowledge["Foundry IQ<br/>Native knowledge-base MCP endpoint"]
-        Search["Azure AI Search<br/>Native UserIds permission filtering<br/>Governed illustrative knowledge"]
-        Work["Work IQ MCP<br/>Individual OAuth authorization"]
-        M365["User-accessible Microsoft 365 content<br/>Current CAT bulletins and SIU routing"]
-        Ontology -->|"Authorized structured-data queries"| Lakehouse
-        Knowledge -->|"User ACL enforcement"| Search
-        Work -->|"User-authorized retrieval"| M365
-    end
-
-    DataSetup["Deployment only<br/>Python synthetic data to Parquet<br/>Lakehouse Load Table API"]
-    Docs["Deployment only<br/>v2 knowledge_docs and approved user grants"]
-    DataSetup -.-> Lakehouse
-    Docs -.-> Search
-    Outlook -->|"Poll approved folder; complete email envelope"| Workflow
-    Workflow -->|"Workflow MI bearer; POST /api/intake/email"| Intake
-    Intake -->|"App MI invokes only the pinned tool-free agent"| Screening
-    Screening -->|"JSON and exact source quotations"| Intake
-    Intake -->|"Notification decision and case pointer only"| Workflow
-    Notify -->|"Minimal Adaptive Card"| Channel
-    Backend -->|"Delegated request; full unverified email and owned response chain"| Investigation
-    Investigation -->|"UserEntraToken; native MCP"| Ontology
-    Investigation -->|"Project MI service transport<br/>Native user ACLs, not shared-user access"| Knowledge
-    Investigation -->|"Individual OAuth2; permitted MCP tools"| Work
-    Backend -.->|"Operator-only confirmed recovery<br/>App MI; control scope limited to owned workflow"| Workflow
+    Blob["Encrypted private state<br/>Cases, history and audit"]
+    Send["Optional escalation<br/>User's mailbox"]
+    Card -->|"Private deep link"| Backend
+    Intake <--> Blob
+    Backend <--> Blob
+    Agent -->|"User token"| Fabric
+    Agent -->|"User ACLs"| Knowledge
+    Agent -->|"Individual OAuth"| Work
+    Backend -.->|"Preview then confirm"| Send
 
     classDef azure fill:#e8f0fe,stroke:#3569b0,color:#172b4d;
     classDef m365 fill:#e7f4e4,stroke:#43833b,color:#17351b;
     classDef agent fill:#eee8fa,stroke:#7753a6,color:#33244c;
     classDef data fill:#fff4d6,stroke:#ad842b,color:#483612;
     classDef action fill:#fde8e8,stroke:#b65b5b,color:#4a2323;
-    class Workflow,Intake,Backend,Entra azure;
-    class Sender,Mailbox,Outlook,Notify,Channel,Analyst,Tab,Work,M365 m365;
-    class Screening,Investigation,Ontology,Knowledge agent;
-    class Vault,Blob,Lakehouse,Search,DataSetup,Docs data;
-    class Operator,Graph action;
+    class Intake azure;
+    class Mailbox,Card,Backend m365;
+    class Agent,Fabric,Knowledge,Work agent;
+    class Blob data;
+    class Send action;
 ```
+
+The processing and investigation stages share **one App Service backend**.
+Intake uses managed identities; investigation uses the analyst's delegated
+access. The full token exchanges, failure handling, reporting and send
+confirmation are in the workflows below. Key Vault,
+private networking and provisioning are covered in the [deployment guide](docs/deployment.md).
+
+### Trust boundaries
 
 | Boundary | Enforcement |
 |---|---|
@@ -169,19 +132,19 @@ sequenceDiagram
     actor Operator as Intake operator
 
     Sender->>Mail: Manually send tagged synthetic FNOL email
-    Note over Mail,LA: Exact rule moves matching mail to the approved folder; connector polls every minute
+    Note over Mail,LA: Exact rule moves matching mail to the approved folder. Connector polls every minute
     LA->>Mail: Read full body and message identity through the mailbox connector
-    Mail-->>LA: Complete envelope; no attachment extraction
+    Mail-->>LA: Complete envelope, no attachment extraction
     LA->>API: POST /api/intake/email with workflow MI bearer
-    API->>API: Validate identity, mailbox, folder, markers and envelope; normalize HTML
-    API->>Store: Create or inspect deterministic EMAIL case; record original email and assignment
+    API->>API: Validate identity, mailbox, folder, markers and envelope. Normalize HTML
+    API->>Store: Create or inspect deterministic EMAIL case. Record original email and assignment
     alt Identical message already completed
         Store-->>API: Existing completed case
-        API-->>LA: notify=false; no repeated screening or notification
+        API-->>LA: notify=false, no repeated screening or notification
     else New case or explicitly approved processing retry
-        API->>Screen: App MI invokes pinned agent with untrusted full email; no tools
+        API->>Screen: App MI invokes pinned agent with untrusted full email, no tools
         Screen-->>API: Screening JSON or failure
-        API->>API: Validate schema and source quotations; supported risk forces urgent
+        API->>API: Validate schema and source quotations. Supported risk forces urgent
         alt Valid FNOL screening
             API->>Store: Save screening and reserve notification identity
             API-->>LA: Case ID, private Teams link and notification receipt identity
@@ -191,15 +154,15 @@ sequenceDiagram
             API->>Store: Verify receipt and mark case notified
         else Valid non-FNOL screening
             API->>Store: Retain case with not_fnol phase
-            API-->>LA: notify=false; no channel card
+            API-->>LA: notify=false, no channel card
         else Screening failed
-            API->>Store: Retain original case; record screening_failed
+            API->>Store: Retain original case. Record screening_failed
             API-->>LA: Explicit processing error
-            LA->>Operator: Minimal failure email with run reference; no case narrative
+            LA->>Operator: Minimal failure email with run reference, no case narrative
         end
     end
-    Note over LA,Operator: Posting or acknowledgement uncertainty requires reconciliation; no blind resend
-    Note over API,Store: Conflicting or unfinished duplicates are rejected; approved recovery uses the original event
+    Note over LA,Operator: Posting or acknowledgement uncertainty requires reconciliation. No blind resend
+    Note over API,Store: Conflicting or unfinished duplicates are rejected. Approved recovery uses the original event
 ```
 
 The screening is an **illustrative, unverified narrative assessment**, not a
@@ -228,7 +191,7 @@ sequenceDiagram
     API->>API: Validate token and assigned-case access
     API->>Store: Read authorized case and user's conversation partition
     Store-->>API: Case context and private history
-    API-->>Tab: Private panels; no shared-channel answer
+    API-->>Tab: Private panels, no shared-channel answer
     Analyst->>Tab: Ask a policy, risk, coverage or operational question
     Tab->>API: POST /api/chat with bearer, case ID and question
     API->>Entra: Server-side OBO for the Foundry audience
@@ -237,7 +200,7 @@ sequenceDiagram
     opt A native source connection requires individual consent
         Agent-->>API: OAuth consent links
         API->>Store: Save this user's pending question and response chain
-        API-->>Tab: Authorization required; no fallback identity
+        API-->>Tab: Authorization required, no fallback identity
         Analyst->>Entra: Complete source authorization in a separate Microsoft window
         Analyst->>Tab: Return and resume investigation
         Tab->>API: Resume the user's own pending question
@@ -253,7 +216,7 @@ sequenceDiagram
         IQ-->>Agent: Denial or tool failure
         Agent-->>API: Grounding failure
         API->>Store: Record failed run metadata
-        API-->>Tab: Visible error; no alternate identity or invented source facts
+        API-->>Tab: Visible error, no alternate identity or invented source facts
     end
     opt Analyst exports a run report
         Analyst->>Tab: Export this case's run report
@@ -265,7 +228,7 @@ sequenceDiagram
         Analyst->>Tab: Enter literal recipient and request a draft
         Tab->>API: Request escalation preview
         API->>Store: Persist user/case-owned immutable preview and confirmation token
-        API-->>Tab: Preview only; nothing sent
+        API-->>Tab: Preview only, nothing sent
         Analyst->>Tab: Separately confirm the exact preview
         Tab->>API: Confirm draft ID and matching token
         API->>Entra: Acquire the current user's approved delegated Mail.Send token
@@ -273,7 +236,7 @@ sequenceDiagram
         API->>Graph: POST /me/sendMail as the signed-in user
         Graph-->>API: HTTP 202 accepted, rejection or uncertain outcome
         API->>Store: Persist send outcome and metadata-only audit
-        API-->>Tab: Show actual outcome; never automatically resend
+        API-->>Tab: Show actual outcome. Never automatically resend
     end
 ```
 
