@@ -1,0 +1,20 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; background: light-dark(#f5f7fb, #0d1117); color: light-dark(#17202c, #e6edf3); }
+body[data-theme="default"] { color-scheme: light; }
+body[data-theme="dark"] { color-scheme: dark; }
+body[data-theme="contrast"] { color-scheme: dark; background: #000; color: #fff; }
+body[data-teams="true"] main { margin: 0 auto; padding: 1.25rem; }
+main { max-width: 860px; margin: 3rem auto; padding: 2rem; }
+h1 { margin-bottom: .5rem; }
+header p, footer { color: light-dark(#536173, #9aa8bb); line-height: 1.6; }
+.badge { font-size: .75rem; letter-spacing: .12em; color: light-dark(#185eb4, #7cb8ff); }
+section { margin-top: 2rem; }
+label { display: block; font-weight: 600; margin: 1rem 0 .5rem; }
+select, textarea { box-sizing: border-box; width: 100%; padding: .8rem; border: 1px solid #718096; border-radius: .4rem; font: inherit; }
+textarea { min-height: 110px; resize: vertical; }
+button, #login { display: inline-block; padding: .65rem 1rem; margin-top: .75rem; border: 0; border-radius: .4rem; background: #1868bd; color: white; text-decoration: none; font: inherit; cursor: pointer; }
+button:disabled { opacity: .5; cursor: wait; }
+article { margin: 1rem 0; padding: 1rem; background: light-dark(white, #161b22); border-radius: .5rem; border: 1px solid light-dark(#dce2ec, #30363d); }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; }
+footer { font-size: .8rem; margin-top: 3rem; }
+[hidden] { display: none !important; }

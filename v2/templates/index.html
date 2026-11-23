@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FNOL v2 | Private investigation</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {% if teams %}
+  <script src="https://res.cdn.office.net/teams-js/2.34.0/js/MicrosoftTeams.min.js"
+    integrity="sha384-brW9AazbKR2dYw2DucGgWCCcmrm2oBFV4HQidyuyZRI/TnAkmOOnTARSTdps3Hwt"
+    crossorigin="anonymous" defer></script>
+  {% endif %}
+  <script src="/static/app.js" defer></script>
+</head>
+<body data-teams="{{ 'true' if teams else 'false' }}">
+  <main>
+    <header><span class="badge">ISOLATED V2 PILOT</span><h1>Private claims investigation</h1>
+      <p>Fabric IQ Gen 2 ontology, permission-aware Foundry IQ and individual Work IQ authorization.</p>
+    </header>
+    <p id="status" role="status">Sign in to view your assigned synthetic cases.</p>
+    <p>{% if teams %}<button id="teams-login">Retry Teams sign-in</button>{% else %}<a id="login" href="/login">Sign in with Microsoft Entra</a>{% endif %} <button id="logout" hidden>Sign out</button></p>
+    <section id="workspace" hidden>
+      <label for="case">Assigned case</label><select id="case"></select>
+      <details id="email-intake" hidden>
+        <summary>Private email intake and initial screening</summary>
+        <pre id="email-screening"></pre>
+        <details><summary>Full email text (unverified)</summary><pre id="email-source"></pre></details>
+      </details>
+      <div id="conversation" aria-live="polite"></div>
+      <form id="question-form">
+        <label for="question">Question</label>
+        <textarea id="question" maxlength="6000" required placeholder="What are the facts and applicable procedures for this claim?"></textarea>
+        <button id="send" type="submit">Investigate privately</button>
+      </form>
+      <div id="consent"></div>
+      <button id="resume" hidden>I completed authorization - resume</button>
+      <details>
+        <summary>Escalate with my account</summary>
+        <p>The agent cannot send email. Enter a literal recipient and review the exact message.
+          Only your separate confirmation can submit it as you.</p>
+        <form id="escalation-form">
+          <label for="escalation-recipient">Recipient supplied by you</label>
+          <input id="escalation-recipient" type="email" required maxlength="254">
+          <label for="escalation-subject">Subject</label>
+          <input id="escalation-subject" required maxlength="200">
+          <label for="escalation-body">Synthetic case escalation message</label>
+          <textarea id="escalation-body" required maxlength="10000"></textarea>
+          <button id="escalation-preview" type="submit">Preview only - do not send</button>
+        </form>
+        <pre id="escalation-review"></pre>
+        <button id="escalation-confirm" hidden>Confirm this exact email and send as me</button>
+      </details>
+      <details>
+        <summary>My private run report</summary>
+        <p>Only your runs for the currently assigned case; no prompts, email bodies or source results.</p>
+        <button id="runs-export">Export my run report (JSON)</button>
+      </details>
+      <details id="email-recovery" hidden>
+        <summary>Intake operator recovery</summary>
+        <p>Recovery checks the actual original workflow run. Reconcile a successfully posted card
+          before considering any replay. An uncertain notification is never retried automatically.</p>
+        <button id="reconcile-delivery">Reconcile existing delivery - do not resend</button>
+        <button id="retry-screening">Confirm retry of failed initial screening</button>
+        <label><input id="no-delivery" type="checkbox">
+          I checked the channel and verified that no notification was delivered.</label>
+        <button id="retry-notification">Confirm retry of undelivered notification</button>
+      </details>
+    </section>
+    <footer>Synthetic demonstration only. Some integrations are preview. Answers remain in this private session, not a Teams channel. Do not enter real claimant data.</footer>
+  </main>
+</body>
+</html>

@@ -1,37 +1,14 @@
-.env
-__pycache__/
-*.pyc
-orchestrator_agent_id.txt
-
-triggers/webapp/deploy.zip
-
-# Agent Identity credentials/token cache - never commit (see
-# shared/agent_identity_auth.py). Contains a live refresh token.
+# Private deployment settings and local-only archives must never be published.
 .secrets/
+temp/
+.env
+.env.*
+__pycache__/
+*.py[cod]
 *.bin
+.venv/
+venv/
 
-# Generated per-environment Logic App files - contain live subscription id,
-# tenant IDs, API key, and connection resource IDs. Only the .template
-# versions are tracked in source control.
-triggers/logicapp/parameters.json
-triggers/logicapp/connections.json
-
-# Word lock files
-~$*.docx
-
-# Testing / diagnostic artifacts - kept locally only, not part of the
-# public accelerator surface.
-e2e_test_lib.py
-run_e2e_tests.py
-e2e_test_results.json
-foundry/deploy_diagnostic_notebook.py
-foundry/fabric_sp_auth_diagnostic_notebook.ipynb
-foundry/mcp_sample_sp_auth.ipynb
-foundry/mcp_sample_user_auth.ipynb
-
-# Superseded / rejected design artifacts - kept locally only.
-generate_status_doc.py
-FNOL_Logicapps_Solution_Status.docx
-docs/generate_obo_bot_design_doc.py
-docs/OBO_Bot_Teams_Design.docx
+# Local, deployment-specific Outlook samples include the approved mailbox.
+docs/Auto_FNOL_Sample_Emails_V2.docx
 

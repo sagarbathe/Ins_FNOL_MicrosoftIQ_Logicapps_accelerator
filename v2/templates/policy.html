@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>FNOL v2 pilot - {{ 'Privacy' if privacy else 'Terms' }}</title></head>
+<body>
+  <h1>FNOL v2 synthetic pilot - {{ 'Privacy' if privacy else 'Terms' }}</h1>
+  {% if privacy %}
+  <p>This internal pilot processes your tenant and user identifiers, assigned synthetic cases,
+    questions and agent responses. Private conversation history and browser sessions are encrypted
+    in the deployment's Azure storage. Authorized downstream services process delegated requests
+    under their own service policies. Private answers are not posted to Teams channels.</p>
+  <p>Access is checked per user and per case. Deployment administrators control infrastructure
+    and retention; contact your pilot administrator for access or deletion requests.
+    Do not enter real claimant data or secrets.</p>
+  {% else %}
+  <p>For authorized internal evaluation with synthetic data only. This is not a production
+    claims system or a substitute for professional review. Some integrations are preview.
+    Access depends on source permissions, individual authorization and tenant policies.</p>
+  {% endif %}
+</body>
+</html>

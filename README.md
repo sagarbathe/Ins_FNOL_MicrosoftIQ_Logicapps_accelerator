@@ -1,309 +1,350 @@
-# Auto FNOL Triage — Foundry-Native, Logic Apps Accelerator
+# FNOL v2: user-delegated insurance investigation
 
-Azure-native accelerator for triaging First Notice of Loss (FNOL) emails with **Azure AI Foundry Agent Service**, **Azure Logic Apps**, **Microsoft Fabric**, and **Microsoft Graph**.
+An isolated Microsoft IQ pilot: approved mailbox intake, private investigation
+inside Microsoft Teams, native Fabric IQ Gen 2 ontology grounding, ACL-aware
+Foundry IQ and individual Work IQ authorization.
 
-## FSI IQ Logic Apps Accelerator Skill
+This revision contains **v2 only**. V1 code, automated tests, diagnostic scripts,
+synthetic HTTP probes and historical reports are not part of the published tree.
+Fresh deployments require neither the v1 repository nor any v1 cloud resources.
 
-This repo is the **reference implementation** for the [`fsi-iq-logicapps-accelerator`](.github/skills/fsi-iq-logicapps-accelerator/SKILL.md)
-Copilot CLI skill — the Logic Apps-orchestrated sibling of the Copilot Studio FSI accelerator
-pattern. It captures why to choose a Logic Apps agent loop over Copilot Studio, the three tooling
-layers (connectors, custom connectors, MCP servers — consuming and providing), agent-parameter
-scoping rules, allowed-tools discipline, and the preview-era constraints that break Logic
-Apps + Foundry integrations (OAuth connector limits, one-connector-per-tool, Owner-role
-requirement, etc.). Use it when asked to "build an FSI accelerator with Logic Apps", "expose a
-Logic App as an MCP server for Foundry", or "port this Logic Apps accelerator to a new domain".
+## Solution versions
 
-It demonstrates how to combine three "IQ" building blocks behind one orchestrator:
-
-1. **Architecture** — how the Foundry orchestrator composes Fabric IQ, Foundry IQ, and Work IQ into one triage workflow. See [`docs/design-options.md`](docs/design-options.md).
-2. **Concurrency & context isolation** — how concurrent cases stay isolated in Teams and Foundry so follow-up replies never cross-wire. See [`docs/teams-concurrency-design.md`](docs/teams-concurrency-design.md).
-3. **Agent governance & observability (MVP)** — onboarding this agent to the Agent 365 registry, Entra Agent ID least-privilege basics, and webapp exception logging. See [`docs/agent-governance-observability-mvp.md`](docs/agent-governance-observability-mvp.md).
-
-## Workflow diagram
-
-```
-                         ┌───────────────────────────┐
-   New FNOL email ──────►│   Logic App: Email Intake  │
-   (Agent Identity's      │   (workflow.json)          │
-    own mailbox)          └─────────────┬─────────────┘
-                                        │ creates Foundry thread + posts Teams alert
-                                        ▼
-                         ┌───────────────────────────┐
-                          │  Foundry Orchestrator      │
-                          │  auto-fnol-triage-         │
-                          │  orchestrator               │
-                          └─────────────┬─────────────┘
-                                        │ routes by question type
-        ┌───────────────────────────────┼───────────────────────────────┐
-        │                               │                               │
-        ▼                               ▼                               ▼
-┌────────────────┐            ┌──────────────────┐            ┌──────────────────┐
-│   Fabric IQ      │            │   Foundry IQ       │            │    Work IQ         │
-│ Ontology Data    │            │ Knowledge Agent     │            │ Graph mail search/  │
-│ Agent             │            │ (policy wording,    │            │ send + Teams post   │
-│                   │            │  SIU playbook,       │            │                     │
-│ Policy/Claim/     │            │  regulations,        │            │                     │
-│ Vehicle/Adjuster   │            │  subrogation         │            │                     │
-│ lookups            │            │  methodology)        │            │                     │
-└────────────────┘            └──────────────────┘            └──────────────────┘
-                                        │
-                                        ▼
-                         ┌───────────────────────────┐
-                          │   Answer posted to Teams   │
-                          │   (as nested reply)         │
-                          └─────────────┬─────────────┘
-                                        │
-                                        ▼
-                         ┌───────────────────────────┐
-   Adjuster reply ──────►│  Logic App: Reply Poller   │───────► back to Orchestrator
-   in Teams thread        │  (every 30s)                │        (same Foundry thread,
-                          └───────────────────────────┘        full case context)
-```
-
-**In one sentence:** an email triggers an initial Teams alert from the Foundry orchestrator, and every
-Teams follow-up reply is picked up by a poller and routed back through the same orchestrator — which calls
-Fabric IQ for structured record lookups, Foundry IQ for policy/process knowledge, and Work IQ for mail
-search/send — with the answer always posted back into the same Teams thread.
-
-For the detailed Mermaid architecture diagram with legend, authentication, and concurrency notes, see [`docs/architecture-diagram.md`](docs/architecture-diagram.md).
-
-## Architecture at a glance
-
-| Component | Role |
+| Version | GitHub branch |
 |---|---|
-| **Orchestrator agent** | Azure AI Foundry Agent Service agent (`auto-fnol-triage-orchestrator`) that owns triage instructions, routing logic, and tool selection. |
-| **Fabric IQ** | Fabric ontology data agent for structured entities such as Policy, Claim, Policyholder, Vehicle, Adjuster, FraudSignal, and SubrogationFlag. Exposed to the orchestrator through the Work IQ webapp's `/query-ontology` facade. |
-| **Foundry IQ** | Existing governed knowledge agent for policy wording, FNOL rules, SIU guidance, regulatory knowledge, and subrogation methodology. Wired as a connected-agent tool inside the same Foundry project. |
-| **Work IQ** | Deployed Flask webapp in [`triggers/webapp/`](triggers/webapp/) exposing OpenAPI-callable tools for SharePoint/OneDrive document search, Outlook mail search, ontology proxying, Teams posting, and escalation email sending. |
-| **Agent Identity** | Dedicated Entra ID user (`svc-fnol-agent`) with its own mailbox, Teams membership, and delegated token cache. This is the default auth model (`AUTH_MODE=agent_identity`) for Fabric IQ queries, Teams posting, Work IQ mail access, and escalation emails. |
-| **Email intake trigger** | Logic App [`triggers/logicapp/workflow.json`](triggers/logicapp/workflow.json) monitors the FNOL mailbox, creates a Foundry thread/run, posts the initial alert to Teams, and persists the case/thread mapping. |
-| **Teams reply poller** | Logic App [`triggers/logicapp/workflow-teams-reply-poller.json`](triggers/logicapp/workflow-teams-reply-poller.json) polls each case thread's replies, continues the same Foundry thread, and posts nested follow-up answers back into the same Teams thread. |
-| **Case/Teams correlation store** | Fabric SQL Database table `CaseThreadMap` mapping `CaseId -> TeamId, ChannelId, RootMessageId, FoundryThreadId, LastProcessedReplyId` so every case stays isolated end to end. |
+| V1: original solution and documentation | [main](https://github.com/sagarbathe/Ins_FNOL_MicrosoftIQ_Logicapps_accelerator/tree/main) |
+| V2: this standalone, user-delegated solution | [sagarbathe-microsoft-delegated-agent-authentication](https://github.com/sagarbathe/Ins_FNOL_MicrosoftIQ_Logicapps_accelerator/tree/sagarbathe-microsoft-delegated-agent-authentication) |
 
-## Capabilities
+V2 is published separately; `main` remains the original v1 tree. Removing v1
+files from the v2 branch does not delete them from `main` or Git history.
+Switch to `main` to browse or deploy v1. Neither branch switch nor source
+publication changes existing Azure, Fabric or Microsoft 365 deployments.
 
-- Intake FNOL emails and generate a fast initial triage analysis with urgency, narrative summary, and next steps.
-- Detect SIU fraud red flags from both the intake narrative and follow-up grounded lookups.
-- Assess subrogation candidacy from case facts and follow-up investigation.
-- Support Teams-based follow-up conversations for coverage, vehicle, policyholder, claim, CAT bulletin, and routing questions.
-- Decompose **compound/multi-part follow-up questions** (e.g. "what's the fraud assessment policy, and does this policyholder have fraud history?") into independent sub-questions, route each to the right tool (Fabric IQ vs. Foundry IQ vs. Work IQ), and synthesize one consolidated, per-part-grounded answer.
-- Query Fabric IQ across multiple related entity types when a follow-up asks for more than one record category.
-- Send escalation emails on request (for example to SIU or adjuster teams) via Microsoft Graph **only when explicitly asked**, never by guessing recipients.
+## Core contents
 
-## Quick start / deployment
+| Path | Purpose |
+|---|---|
+| `v2/` | Application, identity boundaries, deployment modules and infrastructure |
+| `v2/templates/`, `v2/static/` | Private Teams interface |
+| `v2/generate_data.py` | Synthetic insurance data generation |
+| `v2/data.py`, `v2/ontology_definition.py`, `v2/ontology.py` | Lakehouse loading and verified Gen 2 ontology creation |
+| `v2/knowledge_docs/`, `v2/knowledge.py` | Illustrative source documents and native knowledge ACL setup |
+| `v2/notifications.py`, `v2/email_deploy.py`, `v2/email_enable.py` | Approved private Teams destination and mailbox workflow lifecycle |
+| `v2/infra.bicep`, `v2/network.bicep` | Isolated Azure foundation and private state networking |
+| `requirements.txt` | Deployment dependencies, including the runtime requirements |
+| `docs/` | Deployment and end-to-end demo instructions |
 
-Run from repo root:
+No Fabric notebooks or Data Factory pipelines are deployed. Python generates
+Parquet files and the Lakehouse Load Table API loads the nine tables. Most
+runtime components are Azure resources, not Fabric workspace items.
+
+## Runtime architecture
+
+V2 separates **autonomous email screening** from **human-authorized IQ
+investigation**. The Logic App coordinates connector and HTTP actions; it does
+not use the native preview Logic Apps Agent action. The human investigation
+agent chooses its allowed native MCP tools inside Foundry. There is no v1
+OpenAPI proxy, Teams reply poller or Fabric SQL `CaseThreadMap` dependency.
+
+### Architecture and trust boundaries
+
+Solid arrows show runtime requests or returned data. Dotted arrows show
+deployment/configuration dependencies or explicitly requested recovery.
+
+```mermaid
+flowchart TB
+    subgraph Email["1. Microsoft 365 email intake"]
+        Sender["Policyholder demo sender<br/>Manual Outlook email"]
+        Mailbox["Approved pilot mailbox<br/>Exact subject rule and isolated folder"]
+        Outlook["Dedicated Office 365 connector<br/>Authorized as intake mailbox"]
+        Sender -->|"[FNOL-V2] [SYNTHETIC] subject markers"| Mailbox
+        Mailbox --> Outlook
+    end
+
+    subgraph Automation["2. Azure Logic Apps - autonomous orchestration"]
+        Workflow["Consumption Logic App<br/>One-minute folder poll<br/>Full body; no attachment extraction"]
+        Notify["Dedicated Teams connector<br/>Authorized native operator"]
+        Operator["Approved operator mailbox<br/>Minimal failure/reconciliation alert"]
+        Workflow -->|"FNOL notification only"| Notify
+        Workflow -->|"Failed or timed-out run; no narrative"| Operator
+    end
+
+    subgraph Application["3. App Service - private case and investigation APIs"]
+        Intake["Email intake API<br/>Validate workflow MI token and envelope<br/>Normalize HTML; deterministic EMAIL case ID"]
+        Backend["Private Teams API<br/>Validate user JWT and case assignment<br/>Server-side OBO; owned conversation context"]
+        Vault["Azure Key Vault<br/>Client credentials and encryption key"]
+        Blob["Encrypted Azure Blob state<br/>Cases, sessions, histories, previews and run metadata<br/>VNet integration, private DNS and Blob private endpoint"]
+        Vault -.->|"App MI retrieves runtime secrets"| Intake
+        Vault -.->|"App MI retrieves runtime secrets"| Backend
+        Intake -->|"App MI; original email and screening state"| Blob
+        Backend -->|"App MI; authorized private state access"| Blob
+    end
+
+    subgraph Foundry["4. Foundry - two distinct pinned agents"]
+        Screening["Tool-free screening agent<br/>JSON summary, quoted risks, next steps and unknowns<br/>Unverified narrative only; no IQ retrieval"]
+        Investigation["Read-only investigation agent<br/>Current user's delegated Foundry credential<br/>Only approved native MCP tools"]
+    end
+
+    subgraph Human["5. Microsoft Teams - private human interaction"]
+        Channel["Approved Teams channel<br/>Case pointer and private deep link only"]
+        Analyst["Assigned analyst<br/>Own Microsoft 365 / Entra identity"]
+        Tab["Personal Teams app<br/>Full email, screening, private answers and report export"]
+        Entra["Microsoft Entra ID<br/>Teams SSO, OBO and user consent"]
+        Graph["Microsoft Graph /me/sendMail<br/>Signed-in user's mailbox<br/>Only separately confirmed escalation"]
+        Channel -->|"Investigate privately"| Tab
+        Analyst --> Tab
+        Tab -->|"Teams SSO"| Entra
+        Entra -->|"API access_as_user token"| Tab
+        Tab -->|"Bearer-authenticated case and chat requests"| Backend
+        Backend -->|"Server-side OBO token exchange"| Entra
+        Entra -->|"Current-user downstream token"| Backend
+        Backend -->|"Immutable preview, then explicit confirmation<br/>Delegated Mail.Send"| Graph
+    end
+
+    subgraph Grounding["6. IQ grounding - requesting user's access boundaries"]
+        Ontology["Fabric IQ Gen 2 ontology<br/>Native ontology MCP endpoint"]
+        Lakehouse["Owned Fabric Lakehouse<br/>Nine synthetic tables"]
+        Knowledge["Foundry IQ<br/>Native knowledge-base MCP endpoint"]
+        Search["Azure AI Search<br/>Native UserIds permission filtering<br/>Governed illustrative knowledge"]
+        Work["Work IQ MCP<br/>Individual OAuth authorization"]
+        M365["User-accessible Microsoft 365 content<br/>Current CAT bulletins and SIU routing"]
+        Ontology -->|"Authorized structured-data queries"| Lakehouse
+        Knowledge -->|"User ACL enforcement"| Search
+        Work -->|"User-authorized retrieval"| M365
+    end
+
+    DataSetup["Deployment only<br/>Python synthetic data to Parquet<br/>Lakehouse Load Table API"]
+    Docs["Deployment only<br/>v2 knowledge_docs and approved user grants"]
+    DataSetup -.-> Lakehouse
+    Docs -.-> Search
+    Outlook -->|"Poll approved folder; complete email envelope"| Workflow
+    Workflow -->|"Workflow MI bearer; POST /api/intake/email"| Intake
+    Intake -->|"App MI invokes only the pinned tool-free agent"| Screening
+    Screening -->|"JSON and exact source quotations"| Intake
+    Intake -->|"Notification decision and case pointer only"| Workflow
+    Notify -->|"Minimal Adaptive Card"| Channel
+    Backend -->|"Delegated request; full unverified email and owned response chain"| Investigation
+    Investigation -->|"UserEntraToken; native MCP"| Ontology
+    Investigation -->|"Project MI service transport<br/>Native user ACLs, not shared-user access"| Knowledge
+    Investigation -->|"Individual OAuth2; permitted MCP tools"| Work
+    Backend -.->|"Operator-only confirmed recovery<br/>App MI; control scope limited to owned workflow"| Workflow
+
+    classDef azure fill:#e8f0fe,stroke:#3569b0,color:#172b4d;
+    classDef m365 fill:#e7f4e4,stroke:#43833b,color:#17351b;
+    classDef agent fill:#eee8fa,stroke:#7753a6,color:#33244c;
+    classDef data fill:#fff4d6,stroke:#ad842b,color:#483612;
+    classDef action fill:#fde8e8,stroke:#b65b5b,color:#4a2323;
+    class Workflow,Intake,Backend,Entra azure;
+    class Sender,Mailbox,Outlook,Notify,Channel,Analyst,Tab,Work,M365 m365;
+    class Screening,Investigation,Ontology,Knowledge agent;
+    class Vault,Blob,Lakehouse,Search,DataSetup,Docs data;
+    class Operator,Graph action;
+```
+
+| Boundary | Enforcement |
+|---|---|
+| Mailbox connector | Reads only the approved intake source. Its identity never becomes the human investigator. |
+| Workflow managed identity (MI) | May call only its configured intake/notification APIs after tenant, audience and application-identity validation. It is not a human bearer token. |
+| Application MI | Infrastructure access to Key Vault, encrypted state, tool-free screening and narrowly scoped operator recovery. No fallback for human IQ authorization. |
+| Human API | Validates Teams token signature, issuer, audience, tenant, scope and client; checks case assignment. No cookie/shared-account fallback after Teams authentication failure. |
+| IQ tools | Fabric uses `UserEntraToken`; Foundry IQ uses `ProjectManagedIdentity` service transport with native user ACL enforcement; Work IQ uses individual `OAuth2` authorization. |
+| Private state | Conversations are keyed by tenant, user, case and agent version; run reports and escalation previews are user/case-owned. Audit records omit prompts, answers and provider response IDs. |
+
+Only Blob application state is depicted as private-endpoint-only. App Service,
+Foundry, Search and Key Vault have their separately documented network controls;
+this diagram does not imply the whole solution is private-only.
+
+### Email-to-case workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Sender as Policyholder demo sender
+    participant Mail as Approved Outlook mailbox
+    participant LA as Isolated Logic App
+    participant API as App Service intake API
+    participant Store as Encrypted Blob state
+    participant Screen as Pinned tool-free Foundry agent
+    participant Teams as Approved Teams channel
+    actor Operator as Intake operator
+
+    Sender->>Mail: Manually send tagged synthetic FNOL email
+    Note over Mail,LA: Exact rule moves matching mail to the approved folder; connector polls every minute
+    LA->>Mail: Read full body and message identity through the mailbox connector
+    Mail-->>LA: Complete envelope; no attachment extraction
+    LA->>API: POST /api/intake/email with workflow MI bearer
+    API->>API: Validate identity, mailbox, folder, markers and envelope; normalize HTML
+    API->>Store: Create or inspect deterministic EMAIL case; record original email and assignment
+    alt Identical message already completed
+        Store-->>API: Existing completed case
+        API-->>LA: notify=false; no repeated screening or notification
+    else New case or explicitly approved processing retry
+        API->>Screen: App MI invokes pinned agent with untrusted full email; no tools
+        Screen-->>API: Screening JSON or failure
+        API->>API: Validate schema and source quotations; supported risk forces urgent
+        alt Valid FNOL screening
+            API->>Store: Save screening and reserve notification identity
+            API-->>LA: Case ID, private Teams link and notification receipt identity
+            LA->>Teams: Post minimal Adaptive Card through the operator's Teams connector
+            Teams-->>LA: Posted message ID
+            LA->>API: POST case notified acknowledgement with workflow MI bearer
+            API->>Store: Verify receipt and mark case notified
+        else Valid non-FNOL screening
+            API->>Store: Retain case with not_fnol phase
+            API-->>LA: notify=false; no channel card
+        else Screening failed
+            API->>Store: Retain original case; record screening_failed
+            API-->>LA: Explicit processing error
+            LA->>Operator: Minimal failure email with run reference; no case narrative
+        end
+    end
+    Note over LA,Operator: Posting or acknowledgement uncertainty requires reconciliation; no blind resend
+    Note over API,Store: Conflicting or unfinished duplicates are rejected; approved recovery uses the original event
+```
+
+The screening is an **illustrative, unverified narrative assessment**, not a
+coverage decision or a stored fraud finding. Policy-only notices are valid;
+claim IDs are not invented. New screening versions do not automatically rewrite
+previously completed cases. Failure alerts contain only operational metadata.
+
+### Private investigation, reporting and confirmed escalation
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Analyst as Assigned analyst
+    participant Tab as Personal Teams tab
+    participant API as App Service private API
+    participant Entra as Entra and source consent
+    participant Store as Encrypted private state
+    participant Agent as Pinned Foundry investigation agent
+    participant IQ as Native IQ connections
+    participant Graph as Microsoft Graph
+
+    Analyst->>Tab: Open the case's private deep link
+    Tab->>Entra: Request Teams SSO token for this API
+    Entra-->>Tab: Current-user access_as_user bearer
+    Tab->>API: Load case, full email, screening and own history
+    API->>API: Validate token and assigned-case access
+    API->>Store: Read authorized case and user's conversation partition
+    Store-->>API: Case context and private history
+    API-->>Tab: Private panels; no shared-channel answer
+    Analyst->>Tab: Ask a policy, risk, coverage or operational question
+    Tab->>API: POST /api/chat with bearer, case ID and question
+    API->>Entra: Server-side OBO for the Foundry audience
+    Entra-->>API: Current-user delegated Foundry token
+    API->>Agent: Full unverified email context and server-owned previous response ID
+    opt A native source connection requires individual consent
+        Agent-->>API: OAuth consent links
+        API->>Store: Save this user's pending question and response chain
+        API-->>Tab: Authorization required; no fallback identity
+        Analyst->>Entra: Complete source authorization in a separate Microsoft window
+        Analyst->>Tab: Return and resume investigation
+        Tab->>API: Resume the user's own pending question
+        API->>Agent: Continue authorized response chain with current-user credentials
+    end
+    Agent->>IQ: Select only needed, allowed read-only native MCP tools
+    alt Authorized grounding succeeds
+        IQ-->>Agent: Authorized facts, procedures or current operational content
+        Agent-->>API: Answer, available source citations and tool metadata
+        API->>Store: Save user/case/version history and user/case run metadata
+        API-->>Tab: Private answer and tool status
+    else Permission, capacity or grounding failure
+        IQ-->>Agent: Denial or tool failure
+        Agent-->>API: Grounding failure
+        API->>Store: Record failed run metadata
+        API-->>Tab: Visible error; no alternate identity or invented source facts
+    end
+    opt Analyst exports a run report
+        Analyst->>Tab: Export this case's run report
+        Tab->>API: GET case runs with current-user bearer
+        API->>Store: Read only the user's tenant/user/case run partition
+        API-->>Tab: Metadata-only report with any limit indication
+    end
+    opt Analyst explicitly escalates
+        Analyst->>Tab: Enter literal recipient and request a draft
+        Tab->>API: Request escalation preview
+        API->>Store: Persist user/case-owned immutable preview and confirmation token
+        API-->>Tab: Preview only; nothing sent
+        Analyst->>Tab: Separately confirm the exact preview
+        Tab->>API: Confirm draft ID and matching token
+        API->>Entra: Acquire the current user's approved delegated Mail.Send token
+        API->>Store: Reserve one send attempt before the external request
+        API->>Graph: POST /me/sendMail as the signed-in user
+        Graph-->>API: HTTP 202 accepted, rejection or uncertain outcome
+        API->>Store: Persist send outcome and metadata-only audit
+        API-->>Tab: Show actual outcome; never automatically resend
+    end
+```
+
+Fabric answers structured questions over the ontology; Foundry IQ retrieves
+governed illustrative procedures; Work IQ retrieves user-accessible current
+operational information. A service transport identity is **not** permission to
+return documents the human cannot access. Individual consent does not broaden
+source ACLs. Graph HTTP 202 means send acceptance, not confirmed delivery.
+
+### Implementation map
+
+| Diagram component | Repo implementation |
+|---|---|
+| Mailbox isolation, polling and minimal notifications | `v2/mail_source.py`, `v2/email_deploy.py`, `v2/email_enable.py`, `v2/notifications.py` |
+| Original email, duplicate handling and quoted screening evidence | `v2/email_processing.py` |
+| Teams UI, bearer validation, OBO and case ownership | `v2/teams.py`, `v2/static/app.js`, `v2/app.py`, `v2/auth.py` |
+| Pinned human agent and native IQ connections | `v2/agents.py`, `v2/runtime.py`, `v2/knowledge.py`, `v2/workiq.py` |
+| Synthetic tables and Gen 2 ontology provisioning | `v2/generate_data.py`, `v2/data.py`, `v2/ontology_definition.py`, `v2/ontology.py` |
+| Private state, network boundary, explicit send and recovery | `v2/state.py`, `v2/network.bicep`, `v2/escalation.py`, `v2/recovery.py` |
+
+## Deployment and demonstration
+
+Copilot is **not required**. The deployment entry point is:
 
 ```powershell
-.\deploy_solution.ps1
+python -m v2.deploy --help
 ```
 
-This single script builds every artifact the solution needs. Each step checks whether its artifact already exists (via `.env` values such as `FABRIC_DATA_AGENT_ID`/`FOUNDRY_KNOWLEDGE_AGENT_ID`, or generated id files) and automatically skips the build if so — so it's always safe to rerun. Use `-SkipSteps "1,2"` to force-skip specific steps regardless of that check, e.g. on a rerun after a failure partway through.
+- [Deployment guide](docs/deployment.md): prerequisites, configuration, commands,
+  administrator steps and readiness checks.
+- [Demo runbook](docs/demo.md): one approved synthetic email through private Teams
+  investigation, report export and optional confirmed escalation.
 
-See [`docs/building-fabric-and-foundry-iq.md`](docs/building-fabric-and-foundry-iq.md) for details on the Fabric IQ / Foundry IQ build steps.
+Run stages sequentially from the repository root. Deployment state is saved in
+`.secrets\v2\deployment.json`; never commit it or use another environment's state.
+The deployment refuses unowned resources and retains protections for existing
+workflows listed in that private state. New initialization records
+`protectedWorkflows: []`; no existing workflows are required. Optionally record
+actual fingerprints of workflows that must remain unchanged. Existing pilot
+`emailIntake.protectedV1Workflows` entries remain enforced for compatibility,
+even when the new list is empty; they are not required for a fresh deployment.
 
-Use [`.env.example`](.env.example) as the source of truth for required and optional configuration.
+For a separate deployment, use a clean source folder, a new resource prefix and
+fresh initialization. Do not copy `.secrets` or adopt the running pilot's resource
+IDs. See the deployment guide's clean-copy instructions. Local standalone checks
+do not establish fresh-tenant Outlook-to-Teams acceptance.
 
-High-level deployment flow in `deploy_solution.ps1`:
+## Local-only material
 
-0. **Prerequisites** — verify Azure CLI, Python, and local `.env` setup.
-1. **Generate synthetic Auto FNOL data** — creates sample CSVs under `datagen/output` (skipped if already present).
-2. **Load data into the Fabric lakehouse** — uploads and loads the generated CSVs into Fabric tables (skipped if `FABRIC_LAKEHOUSE_DATA_LOADED=true`).
-3. **Build Fabric IQ ontology and configure the data agent** — creates the ontology and data agent over the lakehouse tables (skipped if `FABRIC_DATA_AGENT_ID` or `FABRIC_ONTOLOGY_ID` is already set).
-3b. **(Optional) Build Ontology v2 (Gen 2 / new experience, TMDL)** — creates `AutoFNOL_Ontology_V2` over the same lakehouse tables (skipped if `FABRIC_ONTOLOGY_V2_ID` is already set). Not yet used by the Fabric Data Agent; see [Ontology versions](#ontology-versions-gen-1-vs-gen-2) below. Skip with `-SkipSteps "3b"` if not needed.
-4. **Build Foundry IQ search index and knowledge agent** — chunks `foundry/kb_docs` into Azure AI Search and creates the knowledge agent (skipped if `FOUNDRY_KNOWLEDGE_AGENT_ID` is set or `foundry/foundry_knowledge_agent_id.txt` already exists).
-5. **Create Agent Identity user** — create the dedicated Entra user and pause for license/team/workspace/Foundry access setup.
-6. **Register Agent Identity public-client app** — create the delegated-auth app registration and grant Graph/Fabric/SQL delegated scopes.
-7. **Bootstrap MSAL token cache** — run the one-time Graph + Fabric + SQL device-code bootstrap for the Agent Identity.
-8. **Create CaseThreadMap table** — provision the Fabric SQL table and index used for case/thread correlation.
-9. **Deploy Work IQ webapp** — deploy the Flask app and push app settings, including the chunked token-cache seed.
-10. **Create Foundry connection** — create the Foundry Custom Keys connection that injects the Work IQ API key.
-11. **Create orchestrator agent** — provision the Foundry orchestrator and record its new `agent_id`.
-12. **Deploy Logic Apps** — generate parameters/connections and deploy both the email-intake and Teams-reply-poller workflows.
-13. **Grant Logic App roles** — grant both Logic Apps' managed identities the RBAC/app permissions they need for Foundry and Graph operations.
+The maintainer's local checkout separates non-core material as follows.
+These paths are Git-ignored and are **not included in a fresh GitHub clone**:
 
-## Request / response flow
-
-1. New FNOL email lands in the Agent Identity mailbox.
-2. Email-intake Logic App creates a new Foundry thread, posts the email as the first message, and runs the orchestrator.
-3. The orchestrator returns an **initial-analysis-only** response for first-pass intake (no tool calls on that first message).
-4. Work IQ posts the result as a **new top-level Teams message** and persists `CaseThreadMap`.
-5. The reply-poller Logic App enumerates open cases, polls each root message's `/replies`, and filters out already-processed or self-authored agent replies.
-6. A human follow-up is appended to the **same Foundry thread**, so the agent answers with full case context.
-7. Work IQ posts the answer as a **nested Teams reply** under the original case thread.
-
-## Repo layout
-
-```text
-fabric/
-  create_ontology.py                # Creates the AutoFNOL ontology item (Gen 1 / old experience) over lakehouse tables. Wired into the Fabric Data Agent today.
-  create_ontology_v2.py             # Creates AutoFNOL_Ontology_V2 (Gen 2 / new experience, TMDL-based) over the same lakehouse. Kept alongside Gen 1 until Fabric Data Agents support Gen 2 ontologies. See version history below.
-  configure_data_agent.py           # Configures the Fabric data agent against raw lakehouse tables.
-  configure_data_agent_ontology.py  # Reconfigures the data agent to use the ontology graph once available.
-  add_adjuster_relationship.py      # Patch helper for older ontologies missing Claim->Adjuster relationship.
-  add_adjuster_edge_to_graph.py     # Patch helper for older auto-generated graph models.
-  check_capacities.py               # Quick Fabric capacity/workspace diagnostics.
-  check_admin_capacities.py         # Quick Fabric admin-capacity diagnostics.
-  check_reference_agent.py          # Inspects a Fabric data agent definition.
-  test_gql_pol5.py                  # Sample graph query smoke test.
-  test_mcp_dataagent.py             # Sample MCP data-agent smoke test.
-
-foundry/
-  build_search_index.py             # Chunks kb_docs and loads them into Azure AI Search.
-  create_foundry_agent.py           # Creates the standalone Foundry IQ knowledge agent from the search index.
-  create_orchestrator_agent.py      # Creates/recreates the Foundry orchestrator agent and wires its tools/instructions.
-  create_workiq_connection.py       # Creates the Foundry Custom Keys connection for the Work IQ webapp API key.
-  deploy_diagnostic_notebook.py     # Publishes the Fabric SP-auth diagnostic notebook into a Fabric workspace.
-  enable_activity_protocol.py       # Patch helper to enable activity protocol on an existing Foundry IQ agent.
-  fabric_ontology_openapi.json      # OpenAPI contract for the orchestrator's Fabric IQ ontology tool facade.
-  fabric_sp_auth_diagnostic_notebook.ipynb # Notebook for diagnosing Fabric service-principal auth behavior.
-  foundry_knowledge_agent_id.txt    # Last-created Foundry IQ knowledge agent id for downstream reuse.
-  kb_docs/                          # Source markdown docs that power the Foundry IQ search index.
-  mcp_sample_sp_auth.ipynb          # Sample notebook for calling Fabric MCP endpoints with service-principal auth.
-  mcp_sample_user_auth.ipynb        # Sample notebook for calling Fabric MCP endpoints with delegated user auth.
-  orchestrator_agent_id.txt         # Last-created orchestrator agent id, consumed by deployment scripts.
-  run_agent_thread.py               # Helper to create/continue Foundry threads and poll runs.
-  inspect_run_trace.py              # CLI to list threads/runs and print full tool-call traces directly from the Threads/Runs/RunSteps API - workaround for the Foundry portal Traces tab only showing Playground-originated conversations (see docs/detailed-call-sequence.md Known Issues).
-  sync_run_history.py               # Syncs Threads/Runs/RunSteps into the Fabric SQL AgentRunHistory table (idempotent); see docs/agent-governance-observability-mvp.md section 3.
-  test_foundry_agent.py             # Smoke test for the Foundry IQ knowledge agent.
-  tools_fabric_iq.py                # Python facade that proxies ontology questions to the Fabric MCP data agent.
-  tools_workiq_graph.py             # Legacy/local Work IQ Graph helper module under `foundry/`.
-  workiq_graph_openapi.json         # OpenAPI contract for Work IQ search/mail/send-email tool endpoints.
-
-datagen/
-  generate_fnol_data.py             # Generates synthetic CSV source data for the accelerator.
-  load_to_lakehouse.py              # Uploads generated CSVs into OneLake and loads Fabric tables.
-  e2e_golden_path_test.py           # Data-level verification query script for the generated dataset.
-
-shared/
-  agent_identity_auth.py            # Shared delegated-auth helper for the Agent Identity, including chunked cache reassembly.
-  bootstrap_agent_identity_tokens.py # One-time bootstrap for Graph + Fabric + SQL tokens into one MSAL cache.
-  case_thread_store_schema.sql      # Fabric SQL schema for the CaseThreadMap correlation table and index.
-  create_case_thread_map.py         # Creates/updates the CaseThreadMap table in Fabric SQL.
-  agent_run_history_schema.sql      # Fabric SQL schema for the AgentRunHistory run/trace persistence table.
-  create_agent_run_history_table.py # Creates the AgentRunHistory table (+ indexes) in Fabric SQL.
-  post_to_teams.py                  # Shared Teams posting + case-thread persistence helpers used outside the webapp.
-
-triggers/logicapp/
-  connections.json                  # Generated local Logic App connection bindings.
-  connections.json.template         # Template for Logic App connection bindings.
-  deploy_logic_apps.py              # Generates parameters/connections and deploys both Logic Apps via ARM REST.
-  parameters.json                   # Generated local Logic App parameter values.
-  parameters.json.template          # Template for Logic App parameters.
-  workflow-teams-reply-poller.json  # Sequential reply-poller Logic App for Teams follow-up handling.
-  workflow.json                     # Email-intake Logic App for new FNOL mailbox messages.
-
-triggers/webapp/
-  .secrets/agent_identity_token_cache.bin # Local token-cache seed used for webapp packaging/tests (not for source control).
-  agent_identity_auth.py            # Webapp copy of Agent Identity auth helper; must be kept manually in sync with `shared/`.
-  app.py                            # Flask app exposing Work IQ, Teams, and case-thread REST endpoints.
-  deploy_webapp.py                  # Deploys the Flask webapp to Azure App Service and pushes app settings.
-  post_to_teams.py                  # Webapp Teams helper that renders markdown to Teams-friendly HTML with urgency color/spacing fixes.
-  requirements.txt                  # Python dependencies for the Flask webapp.
-  tools_fabric_iq.py                # Flask-side ontology proxy used by `/query-ontology`.
-  tools_workiq_graph.py             # Flask-side Graph implementations for `/search-documents`, `/search-mail`, and `/send-email`.
-
-triggers/azure-function/
-  EmailTriggerFunction/__init__.py               # Skeleton Function alternative for Graph-mail webhook intake.
-  EmailTriggerFunction/function.json             # Function binding for the email webhook trigger.
-  WorkIQFunction/SearchDocuments/__init__.py     # Function endpoint wrapping document search.
-  WorkIQFunction/SearchDocuments/function.json   # Function binding for the document-search endpoint.
-  WorkIQFunction/SearchMail/__init__.py          # Function endpoint wrapping mail search.
-  WorkIQFunction/SearchMail/function.json        # Function binding for the mail-search endpoint.
-  host.json                                      # Azure Functions host configuration.
-  requirements.txt                               # Python dependencies for the Function-based alternative.
-  tools_workiq_graph.py                          # Function-side Work IQ Graph helper implementation.
-```
-
-### Ontology versions (Gen 1 vs Gen 2)
-
-Both ontology scripts are maintained side by side because Fabric Data Agents don't yet support
-Generation 2 ("new experience") ontologies — `AutoFNOL_Ontology` (Gen 1) stays wired into the
-Data Agent, while `AutoFNOL_Ontology_V2` (Gen 2) is used for new-experience portal features
-(entity Instances, graph model, etc.). Update both scripts' history here when either changes.
-
-| Script | Version | Description of changes |
-| --- | --- | --- |
-| `fabric/create_ontology.py` | v1 (Gen 1, old experience, entity-type JSON definition) | Original ontology builder; unchanged this cycle. |
-| `fabric/create_ontology_v2.py` | v2 (Gen 2, new experience, TMDL definition) | Initial version: builds TMDL parts (`.platform`, `database.tmdl`, `model.tmdl`, `namespaces/default.tmdl`, `expressions.tmdl`, `relationships.tmdl`, `entityRelationships.tmdl`, `tables/*.tmdl`, `entities/*.tmdl`) mirroring the Gen 1 entity/relationship model, including entity/property/relationship descriptions and synonyms. Fix: table partitions emit `ONT_WorkspaceId` / `ONT_ItemId` / `ONT_ItemKind` / `ONT_ItemName` annotations — required for the Fabric portal to resolve which Fabric item backs each table; without them, entity Instances showed "The kind of Fabric item this data source points to couldn't be identified." |
-
-
-
-`triggers/webapp/app.py` currently exposes 12 routes:
-
-- `POST /search-documents`
-- `POST /search-mail`
-- `POST /send-email`
-- `POST /query-ontology`
-- `GET /healthz`
-- `POST /post-new-case-alert`
-- `POST /post-case-reply`
-- `POST /resolve-case-reply`
-- `POST /insert-case-thread-map`
-- `POST /list-open-cases`
-- `POST /list-case-replies`
-- `POST /mark-reply-processed`
-
-## Agent Identity pattern
-
-The reference implementation now assumes **delegated auth via a dedicated Agent Identity** rather than a service-principal-only design.
-
-| Aspect | Current pattern |
+| Path | Contents |
 |---|---|
-| Identity | Dedicated Entra ID user such as `svc-fnol-agent` |
-| Why it exists | Fabric ontology queries and Teams channel posting require delegated user context; the same identity also owns mailbox search and escalation email send. |
-| Mailbox | The FNOL intake mailbox is the Agent Identity's own mailbox. |
-| Teams | The Agent Identity is a real member of the target team/channel and posts as itself. |
-| Token bootstrap | Use `shared/bootstrap_agent_identity_tokens.py` to acquire Graph, Fabric, and Azure SQL scopes into one MSAL cache. |
-| Webapp deployment | `deploy_webapp.py` base64-encodes the token cache, chunks it across app settings, and `agent_identity_auth.py` reassembles it at runtime. |
-| Default mode | `AUTH_MODE=agent_identity` |
+| `temp\legacy-v1\` | Preserved v1 implementation and original documentation |
+| `temp\tests\v2\` | Automated regression tests |
+| `temp\diagnostics\` | Diagnostic scripts, synthetic probes and local evidence |
+| `temp\acceptance\` | Historical capability acceptance tracker |
+| `temp\design-history\` | Detailed design and investigation history |
+| `.secrets\v2\` | Active private deployment configuration and generated assets |
 
-## Agent run-history sync (`AgentRunHistory`)
+Moving source files does not remove or reconfigure deployed Azure, Fabric or
+Microsoft 365 resources. Historical versions remain in Git history.
 
-Persists the same Foundry Threads/Runs/RunSteps trace that `foundry/inspect_run_trace.py`
-prints to the console into a queryable `AgentRunHistory` table in the same Fabric SQL database
-that hosts `CaseThreadMap` — one row per user message, agent message, and tool call, including
-`ParentThreadId` links for connected-agent sub-threads (e.g. Foundry IQ's internal sub-thread
-spawned when the orchestrator calls it as a tool). See
-[`docs/agent-governance-observability-mvp.md`](docs/agent-governance-observability-mvp.md)
-section 3 for the full design.
+## Pilot boundaries
 
-**One-time setup:**
-
-```
-cd C:\Sagar\MicrosoftIQ\Ins_FNOL_MicrosoftIQ_Logicapps_accelerator
-python shared\create_agent_run_history_table.py   # creates the AgentRunHistory table + indexes (idempotent)
-```
-
-**Prerequisites to run the sync:**
-
-- `az login` — as a user with the **Foundry User** role on the project (used to read
-  Threads/Runs/RunSteps).
-- `shared/bootstrap_agent_identity_tokens.py` must have been run at least once (used to write to
-  Fabric SQL via the `svc-fnol-agent` Agent Identity's cached SQL token) — skip if already done.
-
-**Run the sync:**
-
-```
-python foundry\sync_run_history.py                    # syncs the 30 most recent threads
-python foundry\sync_run_history.py --limit 100         # syncs more threads
-python foundry\sync_run_history.py thread_abc123        # syncs just one specific thread
-```
-
-Safe to re-run anytime — already-synced rows are skipped (idempotent upsert keyed on
-`ThreadId`/`RunId`/`StepId`). There is no scheduled trigger yet; it's manual/on-demand only.
-
-## Known operational gotchas
-
-- Use the **Foundry User** RBAC role for Logic App managed identities calling Foundry thread/message/run APIs; legacy **Cognitive Services User** alone is not sufficient for the current Foundry data plane.
-- There are **two copies** of `agent_identity_auth.py` (`shared/` and `triggers/webapp/`); keep them manually in sync.
-- Use `shared/bootstrap_agent_identity_tokens.py` for the full Graph + Fabric + SQL bootstrap. The `shared/agent_identity_auth.py --bootstrap` path is legacy and incomplete.
-- Keep `triggers/logicapp/workflow-teams-reply-poller.json` trigger concurrency at `runtimeConfiguration.concurrency.runs = 1` to avoid overlapping poll cycles racing on the same Foundry thread.
-- Recreating the orchestrator with `foundry/create_orchestrator_agent.py` generates a **new agent id**; always redeploy **both** Logic Apps afterward so the updated id is propagated.
-
-## Relationship to the underlying IQ components
-
-- **Fabric IQ**: you can either reuse an existing `AutoFNOL_Ontology` / data-agent deployment, or build it from scratch in this repo using `datagen/` + `fabric/`. The orchestrator still consumes the same `FABRIC_WORKSPACE_ID` / `FABRIC_DATA_AGENT_ID` values downstream either way.
-- **Foundry IQ**: you can either reuse an existing governed knowledge agent, or build it from scratch in this repo using `foundry/kb_docs/`, `foundry/build_search_index.py`, and `foundry/create_foundry_agent.py`. The orchestrator still consumes the same `FOUNDRY_KNOWLEDGE_AGENT_ID` downstream either way.
-- **Work IQ**: this accelerator implements equivalent operational retrieval directly against Microsoft Graph (document search, mailbox search, and email send) behind a small webapp, so no separate low-code connector is required.
-
+- Synthetic data and explicitly approved mailbox routing only.
+- No automatic claim creation, attachment OCR, Fabric write-back or recurring
+  data-engineering pipeline.
+- Do not broaden source permissions to make a user's question succeed.
+- Restricted-user ontology initialization and Agent 365 onboarding remain parked;
+  overall deployment readiness must not be inferred from owner-path acceptance.
+- Ontology, delegation and integration APIs include preview components. This is
+  an evaluation accelerator, not a production-readiness claim.

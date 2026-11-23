@@ -1,14 +1,6 @@
-azure-identity
-azure-ai-projects
-azure-ai-agents
-requests
-msal
-azure-functions
-python-dotenv
+-r v2/requirements.txt
+azure-storage-file-datalake
 pandas
+pyarrow
 faker
 pyodbc
-azure-storage-file-datalake
-mcp
-httpx
-python-docx
