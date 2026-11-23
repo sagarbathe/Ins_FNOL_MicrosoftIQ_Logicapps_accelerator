@@ -12,3 +12,6 @@ venv/
 # Local, deployment-specific Outlook samples include the approved mailbox.
 docs/Auto_FNOL_Sample_Emails_V2.docx
 
+# Office document owner/lock files can contain local user metadata.
+~$*
+
