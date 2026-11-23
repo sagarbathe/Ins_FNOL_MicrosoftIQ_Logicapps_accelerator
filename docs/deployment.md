@@ -105,14 +105,14 @@ email pack is not a deployment dependency; if using it for a new demo, replace
 its recipient with the newly approved mailbox. Follow the remaining stages from
 this clean folder with a new unique prefix and fresh tenant-specific approvals.
 
-Other users must obtain the **v2 branch** or the supplied v2 source package.
-The GitHub default branch `main` intentionally retains v1; cloning the default
-branch does not obtain this solution.
+Other users can obtain v2 from the GitHub default branch **`main`** or the
+supplied v2 source package. The original solution is preserved on the **`v1`**
+branch and is not required for this deployment.
 
-To obtain the v2 branch:
+To obtain v2:
 
 ```powershell
-git clone --branch 'sagarbathe-microsoft-delegated-agent-authentication' `
+git clone --branch 'main' `
   'https://github.com/sagarbathe/Ins_FNOL_MicrosoftIQ_Logicapps_accelerator.git' `
   'C:\Work\FNOL-v2'
 Set-Location 'C:\Work\FNOL-v2'

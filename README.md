@@ -12,13 +12,13 @@ Fresh deployments require neither the v1 repository nor any v1 cloud resources.
 
 | Version | GitHub branch |
 |---|---|
-| V1: original solution and documentation | [main](https://github.com/sagarbathe/Ins_FNOL_MicrosoftIQ_Logicapps_accelerator/tree/main) |
-| V2: this standalone, user-delegated solution | [sagarbathe-microsoft-delegated-agent-authentication](https://github.com/sagarbathe/Ins_FNOL_MicrosoftIQ_Logicapps_accelerator/tree/sagarbathe-microsoft-delegated-agent-authentication) |
+| V1: original solution and documentation | [v1](https://github.com/sagarbathe/Ins_FNOL_MicrosoftIQ_Logicapps_accelerator/tree/v1) |
+| V2: this standalone, user-delegated solution | [main](https://github.com/sagarbathe/Ins_FNOL_MicrosoftIQ_Logicapps_accelerator/tree/main) |
 
-V2 is published separately; `main` remains the original v1 tree. Removing v1
-files from the v2 branch does not delete them from `main` or Git history.
-Switch to `main` to browse or deploy v1. Neither branch switch nor source
-publication changes existing Azure, Fabric or Microsoft 365 deployments.
+The default `main` branch contains v2. The `v1` branch preserves the original
+solution and documentation; switch to `v1` to browse or deploy it. Both versions
+remain accessible in Git history. Neither branch switch nor source publication
+changes existing Azure, Fabric or Microsoft 365 deployments.
 
 ## Core contents
 
@@ -283,23 +283,6 @@ For a separate deployment, use a clean source folder, a new resource prefix and
 fresh initialization. Do not copy `.secrets` or adopt the running pilot's resource
 IDs. See the deployment guide's clean-copy instructions. Local standalone checks
 do not establish fresh-tenant Outlook-to-Teams acceptance.
-
-## Local-only material
-
-The maintainer's local checkout separates non-core material as follows.
-These paths are Git-ignored and are **not included in a fresh GitHub clone**:
-
-| Path | Contents |
-|---|---|
-| `temp\legacy-v1\` | Preserved v1 implementation and original documentation |
-| `temp\tests\v2\` | Automated regression tests |
-| `temp\diagnostics\` | Diagnostic scripts, synthetic probes and local evidence |
-| `temp\acceptance\` | Historical capability acceptance tracker |
-| `temp\design-history\` | Detailed design and investigation history |
-| `.secrets\v2\` | Active private deployment configuration and generated assets |
-
-Moving source files does not remove or reconfigure deployed Azure, Fabric or
-Microsoft 365 resources. Historical versions remain in Git history.
 
 ## Pilot boundaries
 
